@@ -81,8 +81,9 @@ class LMStudioProvider(LLMProvider):
                 if r.status_code == 200:
                     out = []
                     for m in r.json().get("data", []):
+                        raw_type = str(m.get("type", "llm")).lower()
                         out.append(ModelInfo(
-                            id=m.get("id", ""), type=m.get("type", "llm"),
+                            id=m.get("id", ""), type="embedding" if "embed" in raw_type else raw_type,
                             loaded=m.get("state") == "loaded" if "state" in m else None,
                             max_context=m.get("max_context_length"), loaded_context=m.get("loaded_context_length"),
                             arch=m.get("arch", ""), quantization=m.get("quantization", ""),

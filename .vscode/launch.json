@@ -1,0 +1,6 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    { "name": "NEXUS backend (debug)", "type": "debugpy", "request": "launch", "module": "nexus.cli", "args": ["serve"], "cwd": "${workspaceFolder}/backend", "justMyCode": true }
+  ]
+}

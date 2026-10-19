@@ -120,6 +120,8 @@ class PermissionEngine:
                 return Decision("deny", f"Target '{t}' is not in the authorized targets list. A human must add it under "
                                         "Settings > Authorized targets to confirm you are permitted to test it.")
         mode = self.s.execution_mode
+        if mode not in ("read_only", "approval_required", "restricted_automation"):
+            mode = "approval_required"            # fail safe: an unknown/typo'd mode must never be the permissive one
         if mode == "read_only":
             ok = effects <= {READ} or (effects <= {READ, NET_READ} and self.s.read_only_allows_network)
             return Decision("allow") if ok else Decision("deny", "Read-only mode: this action would modify something or run code.")

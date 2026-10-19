@@ -12,7 +12,7 @@ import os
 import threading
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
-from typing import Any, get_type_hints
+from typing import Any
 
 EXECUTION_MODES = ("read_only", "approval_required", "restricted_automation")
 
@@ -177,6 +177,10 @@ def load_settings(data_dir: str | None = None) -> Settings:
         s.data_dir = data_dir
     if not s.data_dir:
         s.data_dir = str(_repo_root() / "data")
+    if s.execution_mode not in EXECUTION_MODES:
+        import logging
+        logging.getLogger("nexus.config").warning("Invalid execution_mode %r - using 'approval_required'", s.execution_mode)
+        s.execution_mode = "approval_required"
     s.data_dir = str(Path(s.data_dir).expanduser().resolve())
     Path(s.data_dir).mkdir(parents=True, exist_ok=True)
     sj = Path(s.data_dir) / "settings.json"
@@ -195,7 +199,6 @@ def load_settings(data_dir: str | None = None) -> Settings:
 def save_overrides(s: Settings, changes: dict[str, Any]) -> list[str]:
     """Persist user-made changes. Validates names and a few critical values. Returns changed keys."""
     valid = {f.name for f in fields(Settings)} - {"data_dir"}
-    hints = get_type_hints(Settings)
     applied: list[str] = []
     with _lock:
         sj = Path(s.data_dir) / "settings.json"
@@ -209,7 +212,6 @@ def save_overrides(s: Settings, changes: dict[str, Any]) -> list[str]:
                 raise ValueError("tool_mode must be auto, native or prompt")
             if v == "***set***":  # UI echoing a masked secret back
                 continue
-            exp = hints.get(k)
             cur_val = getattr(s, k)
             if isinstance(cur_val, bool) and not isinstance(v, bool):
                 raise ValueError(f"{k} must be true/false")

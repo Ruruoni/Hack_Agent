@@ -1,0 +1,11 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    { "label": "NEXUS: first-time setup", "type": "shell", "command": "powershell -ExecutionPolicy Bypass -File scripts/setup.ps1", "problemMatcher": [], "group": "build" },
+    { "label": "NEXUS: start", "type": "shell", "command": "powershell -ExecutionPolicy Bypass -File scripts/start.ps1", "problemMatcher": [] },
+    { "label": "NEXUS: start (dev UI with hot reload)", "type": "shell", "command": "powershell -ExecutionPolicy Bypass -File scripts/start.ps1 -Dev", "problemMatcher": [] },
+    { "label": "NEXUS: stop", "type": "shell", "command": "powershell -ExecutionPolicy Bypass -File scripts/stop.ps1", "problemMatcher": [] },
+    { "label": "NEXUS: check installation (doctor)", "type": "shell", "command": "powershell -ExecutionPolicy Bypass -File scripts/doctor.ps1", "problemMatcher": [] },
+    { "label": "NEXUS: run all tests", "type": "shell", "command": "powershell -ExecutionPolicy Bypass -File scripts/run-tests.ps1", "problemMatcher": [], "group": "test" }
+  ]
+}

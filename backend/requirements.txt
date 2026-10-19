@@ -19,7 +19,7 @@ python-docx>=1.1
 beautifulsoup4>=4.12
 lxml>=5.0
 trafilatura>=1.8
-# Vector store (a SQLite fallback is used automatically if chromadb is missing)
-chromadb>=0.5
+
+
 # Dataset downloads from Hugging Face
 huggingface_hub>=0.23

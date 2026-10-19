@@ -336,3 +336,16 @@ def test_missing_dependency_is_reported_not_crashed(agent_ctx):
     r = agent_ctx.executor.execute("needs_foo", {}, ToolContext(app=agent_ctx))
     assert r.state == "invalid" and "missing dependencies" in r.data["error"]
     assert "needs_foo" not in [t.name for t in agent_ctx.tools.available()]
+
+
+def test_unknown_execution_mode_fails_safe(agent_ctx):
+    agent_ctx.settings.execution_mode = "yolo"          # e.g. a typo in .env must not become 'allow everything'
+    d = agent_ctx.perms.decide("fs_delete", {"delete"}, "high", {})
+    assert d.outcome == "approval"
+    from nexus.config import load_settings
+    import os
+    os.environ["NEXUS_EXECUTION_MODE"] = "restricted-automation"       # wrong spelling
+    try:
+        assert load_settings(str(agent_ctx.settings.path("..", "d2"))).execution_mode == "approval_required"
+    finally:
+        del os.environ["NEXUS_EXECUTION_MODE"]

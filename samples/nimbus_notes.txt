@@ -1,0 +1,5 @@
+Project Nimbus - Operations Notes
+
+Project Nimbus is the internal name for the telemetry gateway. The Nimbus gateway listens on TCP port 7421 and
+forwards metrics to the collector cluster every 30 seconds. Certificates for Nimbus are rotated every 90 days by the
+platform team. If the gateway stops responding, restart the nimbus-gateway service and check the health endpoint at /healthz.

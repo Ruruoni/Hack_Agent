@@ -202,8 +202,6 @@ def test_missing_training_libraries_block_start_cleanly(agent_ctx, tmp_path, mon
     import nexus.training.manager as tm
     monkeypatch.setattr(tm, "_have", lambda m: False)
     run = _planned_run(agent_ctx, tmp_path)
-    monkeypatch.setattr(tm.TrainingManager, "estimate", lambda self, *a, **k: {"known": True, "feasible": True})
-    aid = agent_ctx.training.request_approval(run["id"]) if False else None
     agent_ctx.db.update("training_runs", run["id"], {"estimate": {"known": True, "feasible": True}})
     aid = agent_ctx.training.request_approval(run["id"])
     agent_ctx.perms.decide_approval(aid, True, decided_by="user")

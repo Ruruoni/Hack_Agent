@@ -19,7 +19,7 @@ def test_model_discovery_and_selection(mock_lm):
     p = LMStudioProvider(mock_lm.base_url)
     models = {m.id: m for m in p.list_models()}
     assert models["mock-chat"].loaded and not models["mock-chat-2"].loaded
-    assert models["mock-chat"].max_context == 32768 and models["mock-embed"].type == "embeddings"
+    assert models["mock-chat"].max_context == 32768 and models["mock-embed"].type == "embedding"   # LM Studio says "embeddings"; we normalise
     assert p.resolve_model(None) == "mock-chat"                  # prefers a loaded chat model
     assert LMStudioProvider(mock_lm.base_url, default_model="mock-chat-2").resolve_model(None) == "mock-chat-2"
 

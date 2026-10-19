@@ -1,0 +1,11 @@
+# OPTIONAL packages. NEXUS works without them (it falls back automatically); install them when you want the extra capability.
+
+# ChromaDB vector store (faster approximate search for big collections). Without it NEXUS uses a built-in SQLite vector store.
+# On Windows this sometimes needs "Microsoft C++ Build Tools" if no wheel exists for your Python version - skip it if the install fails.
+chromadb>=0.5
+
+# Screenshot-free JavaScript page rendering for web research (then run: playwright install chromium)
+# playwright>=1.44
+
+# Local embedding models without LM Studio (large: pulls PyTorch)
+# sentence-transformers>=3.0

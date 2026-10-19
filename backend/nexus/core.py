@@ -56,7 +56,8 @@ class AppContext:
         from .tools.registry import Tool, ToolContext, fail
         from .web_research.research import ResearchManager
         self.perms = PermissionEngine(self.settings, self.db)
-        self.tools = __import__("nexus.tools.registry", fromlist=["ToolRegistry"]).ToolRegistry()
+        from .tools.registry import ToolRegistry
+        self.tools = ToolRegistry()
         self.executor = ToolExecutor(self)
         self.research = ResearchManager(self.settings, self.db, self.stop_event, on_event=self.bus.publish)
         self.ingestion.url_fetcher = self.research.url_fetcher
