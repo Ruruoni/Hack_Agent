@@ -27,7 +27,7 @@ def _repo_root() -> Path:
 def _load_dotenv(path: Path) -> None:
     if not path.is_file():
         return
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+    for line in path.read_text(encoding="utf-8-sig", errors="replace").splitlines():   # utf-8-sig: Windows Notepad adds a BOM
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -115,6 +115,7 @@ class Settings:
     max_auto_download_mb: int = 500          # larger downloads need explicit approval
     # --- privacy ---------------------------------------------------------------------------
     telemetry: bool = False
+    allowed_hosts: list[str] = field(default_factory=lambda: ["localhost", "127.0.0.1", "[::1]"])   # Host headers accepted (DNS-rebinding guard)
     allow_cors_origins: list[str] = field(default_factory=lambda: [
         "http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:8000", "http://127.0.0.1:8000"])
     # --- integrations ---------------------------------------------------------------------

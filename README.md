@@ -9,17 +9,22 @@ A **locally hosted, general-purpose autonomous AI agent** powered by [LM Studio]
 
 ## Quick start (Windows + VS Code)
 
-Full beginner guide: **[INSTALL_WINDOWS.md](INSTALL_WINDOWS.md)**.
+Repository: **https://github.com/Ruruoni/Hack_Agent** - branch **`claude/epic-faraday-mbnov9`** (the default branch). Full beginner guide: **[INSTALL_WINDOWS.md](INSTALL_WINDOWS.md)**; one-page checklist: **[docs/FIRST_RUN_CHECKLIST.md](docs/FIRST_RUN_CHECKLIST.md)**.
 
 ```powershell
+git clone https://github.com/Ruruoni/Hack_Agent.git
+cd Hack_Agent
+git checkout claude/epic-faraday-mbnov9
 powershell -ExecutionPolicy Bypass -File scripts\setup.ps1     # once: Python env, packages, web UI build, database
 # start LM Studio, load a model, Developer tab > Start Server  (see LM_STUDIO_GUIDE.md)
 powershell -ExecutionPolicy Bypass -File scripts\start.ps1     # opens http://127.0.0.1:8000
 powershell -ExecutionPolicy Bypass -File scripts\stop.ps1
 ```
 
-Then open **Setup wizard** in the app: 15 checks that prove each part works on your PC.
+Then run the **Setup wizard** in the app and the end-to-end **[acceptance test](docs/ACCEPTANCE_TEST.md)** (sample PDF + CSV + web page + restart).
 Linux/macOS: `scripts/setup.sh`, `scripts/start.sh`, `scripts/stop.sh`.
+
+> **Status:** built and tested on Linux with a mock of LM Studio. Nothing has been run on Windows or against a real LM Studio yet - see the verification matrix in [docs/TEST_REPORT.md](docs/TEST_REPORT.md).
 
 ## What is in the box
 
@@ -45,7 +50,7 @@ Linux/macOS: `scripts/setup.sh`, `scripts/start.sh`, `scripts/stop.sh`.
 * **Models & learning** - LM Studio status, the three learning systems, regression suite, optional fine-tuning.
 * **Web research**, **Skills & extensions**, **Settings** (permissions, limits, paths, search, privacy, backup, audit).
 
-CLI: `python -m nexus.cli serve | init-db | doctor | ingest | dataset ... | backup | restore | test` (run from `backend/`).
+CLI: `python -m nexus.cli serve | init-db | doctor | ingest | dataset ... | backup | restore | test` (run from `backend/`, with `..\.venv\Scripts\python.exe` on Windows; stop the app before `ingest`/`dataset import`).
 
 ## Project layout
 
@@ -55,7 +60,7 @@ backend/nexus/   llm  agent  memory  knowledge  ingestion  datasets  web_researc
 backend/tests/   automated tests (pytest) + a protocol-level mock of LM Studio
 frontend/        React + TypeScript + Tailwind (Vite); vitest tests
 scripts/         PowerShell (and .sh) setup / start / stop / tests / doctor / backup
-docs/            ARCHITECTURE, SECURITY, TROUBLESHOOTING, TEST_REPORT
+docs/            ARCHITECTURE, SECURITY, TROUBLESHOOTING, TEST_REPORT, ACCEPTANCE_TEST, FIRST_RUN_CHECKLIST
 samples/         tiny demo document, CSV and fine-tuning dataset
 data/            created at run time (database, vectors, raw inputs, reports, logs) - git-ignored
 ```
@@ -66,7 +71,7 @@ data/            created at run time (database, vectors, raw inputs, reports, lo
 powershell -ExecutionPolicy Bypass -File scripts\run-tests.ps1
 ```
 
-See **[docs/TEST_REPORT.md](docs/TEST_REPORT.md)** for what was verified, how, and - just as important - what was **not** run. In short: the backend suite (100 tests) and frontend suite pass in the build environment, including a real CPU LoRA run on a tiny locally-built model, but no real LM Studio, no Windows host and no internet access to Hugging Face / public sites were available there.
+See **[docs/TEST_REPORT.md](docs/TEST_REPORT.md)** for what was verified, how, and - just as important - what was **not** run. In short: the backend suite (103 tests) and frontend suite (11) pass in the build environment, including a real CPU LoRA run on a tiny locally-built model, but no real LM Studio, no Windows host and no internet access to Hugging Face / public sites were available there.
 
 ## Honest limitations and deferred work
 
@@ -77,7 +82,8 @@ See **[docs/TEST_REPORT.md](docs/TEST_REPORT.md)** for what was verified, how, a
 * PostgreSQL/pgvector and multi-user deployment are a documented upgrade path, not implemented.
 * QLoRA/GPU training and the GGUF export commands are implemented but could not be run in the build environment (CPU-only LoRA was). Fine-tuning quality on real models is untested.
 * Scale: streaming and checkpointing are designed for millions of records and verified on 1.2 M rows (profile-only) and 20 k indexed rows; a multi-million-row *indexed* import was not performed.
-* PowerShell scripts were written carefully but not executed on Windows in the build environment (their Linux twins were).
+* The PowerShell scripts were parse-checked and their start/stop/port logic exercised under PowerShell Core on Linux, but never executed on Windows (their `.sh` twins were run).
+* Security: no API authentication (loopback-only + Host/Origin guards); the sandbox is weaker on Windows. Read [docs/SECURITY.md](docs/SECURITY.md) before enabling any active tool execution.
 
 ## License
 

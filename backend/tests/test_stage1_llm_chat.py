@@ -133,3 +133,14 @@ def test_rolling_summary_keeps_prompt_small(lm_ctx, mock_lm):
     c = chat.get(conv["id"])
     assert c["summary"] and c["summarized_upto"] > 0
     assert len(mock_lm.requests[-1]["messages"]) <= 1 + 4 + 1     # system + history window (+ current)
+
+
+def test_dotenv_with_windows_bom_and_crlf_is_parsed(tmp_path, monkeypatch):
+    from nexus.config import _load_dotenv
+    monkeypatch.delenv("NEXUS_CHAT_MODEL", raising=False)
+    f = tmp_path / ".env"
+    f.write_bytes("\ufeffNEXUS_CHAT_MODEL=my-model\r\n# comment\r\nNEXUS_CONTEXT_WINDOW=4096\r\n".encode("utf-8"))   # what Notepad produces
+    _load_dotenv(f)
+    import os
+    assert os.environ["NEXUS_CHAT_MODEL"] == "my-model"
+    monkeypatch.delenv("NEXUS_CHAT_MODEL"); monkeypatch.delenv("NEXUS_CONTEXT_WINDOW", raising=False)

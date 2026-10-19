@@ -31,7 +31,7 @@ const SECTIONS: { id: string; title: string; intro?: string; fields: Def[] }[] =
     { key: "search_provider", label: "Search provider", type: { select: ["none", "searxng", "brave"] } }, { key: "search_url", label: "SearxNG URL" }, { key: "search_api_key", label: "Search API key", type: "secret" } ] },
   { id: "integ", title: "Integrations & external tools", intro: "JSON lists. Integrations: [{\"name\":\"tickets\",\"base_url\":\"https://api.example.com\",\"auth_env\":\"TICKETS_TOKEN\",\"allow_write\":false}]. External tools: [{\"name\":\"nmap_scan\",\"executable\":\"nmap\",\"args\":[\"-sT\",\"{target}\"],\"params\":{\"target\":\"[A-Za-z0-9.\\\\-/]+\"},\"target_param\":\"target\",\"effects\":[\"network_write\"],\"risk\":\"high\"}]. API secrets are read from environment variables, never stored here.", fields: [
     { key: "integrations", label: "API integrations", type: "json" }, { key: "external_tools", label: "Registered external tools", type: "json" } ] },
-  { id: "privacy", title: "Privacy", fields: [{ key: "telemetry", label: "Telemetry (this build sends none)", type: "bool" }, { key: "allow_cors_origins", label: "Browser origins allowed to call the API", type: "list" }] },
+  { id: "privacy", title: "Privacy", fields: [{ key: "telemetry", label: "Telemetry (this build sends none)", type: "bool" }, { key: "allow_cors_origins", label: "Browser origins allowed to call the API", type: "list" }, { key: "allowed_hosts", label: "Allowed host names (DNS-rebinding guard)", type: "list", hint: "Names you may type in the browser address bar. Default: localhost, 127.0.0.1, [::1]." }] },
 ];
 
 function Editor({ def, value, onChange }: { def: Def; value: any; onChange: (v: any) => void }) {

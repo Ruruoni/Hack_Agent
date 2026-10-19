@@ -2,12 +2,25 @@
 
 Start with **Setup wizard** (web UI) or `scripts\doctor.ps1`: they test each layer and print a hint. Logs: `data\logs\backend.log` and `backend.err.log`.
 
+## Quick triage (do this first)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\doctor.ps1                 # connection / model / database checks with hints
+Get-Content data\logs\backend.err.log -Tail 40                            # the real error message
+netstat -ano | findstr :8000                                              # is something listening on the NEXUS port?
+```
+
 ## Installation
 
 | Symptom | Cause / fix |
 |---|---|
 | `python` is "not recognized" | Python is not on PATH. Re-run the Python installer > *Modify* > tick *Add Python to environment variables*; open a **new** PowerShell. |
-| `running scripts is disabled on this system` | Use `powershell -ExecutionPolicy Bypass -File scripts\setup.ps1` (this affects only that command). |
+| `running scripts is disabled on this system` / `cannot be loaded because running scripts is disabled` / `UnauthorizedAccess` | Windows blocks `.ps1` files by default. Always start scripts as `powershell -ExecutionPolicy Bypass -File scripts\setup.ps1` (affects only that command, needs no administrator rights). To make plain `.\scripts\start.ps1` work: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`. If the files came from a ZIP and Windows still refuses ("not digitally signed"/"from the internet"), run `Get-ChildItem -Recurse scripts | Unblock-File` once. A company-managed PC may forbid changing the policy: ask IT, or run the Python commands from the scripts manually. |
+| `npm` fails with "running scripts is disabled" although you used `-ExecutionPolicy Bypass` | You ran `npm` yourself in a normal PowerShell: use `npm.cmd` instead (e.g. `npm.cmd run build`) or `cmd /c npm run build`. |
+| `python` opens the Microsoft Store | Settings > Apps > Advanced app settings > *App execution aliases*: turn off the "python.exe" entries, or install Python from python.org and reopen PowerShell. |
+| `ModuleNotFoundError: No module named ...` when starting | The packages are missing from `.venv` (setup was interrupted or you ran the system Python). Run `powershell -ExecutionPolicy Bypass -File scripts\setup.ps1` again; or `.\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt`. Always use `.venv\Scripts\python.exe`, not a bare `python`. |
+| `pip` stops with "Could not find a version that satisfies the requirement" | Old/32-bit/very new Python, or no internet/proxy. Use 64-bit Python 3.12; set `pip config set global.proxy http://host:port` if behind a proxy. |
+| "No module named nexus" | You ran a command from the wrong folder. `nexus.cli` commands are run from the `backend` folder (`cd backend`); the scripts do that for you. |
 | `pip install` fails building `chroma-hnswlib` / "Microsoft Visual C++ 14.0 required" | Optional package. NEXUS works without ChromaDB (built-in SQLite vector store). To get it, install *Microsoft C++ Build Tools* (https://visualstudio.microsoft.com/visual-cpp-build-tools/) or use Python 3.12. |
 | `pip` cannot find a wheel for PyMuPDF / pyarrow / numpy | You are on a very new or 32-bit Python. Install 64-bit Python 3.12. |
 | `npm` not found | Install Node.js LTS and open a **new** terminal. The API works without it; only the web UI build needs it. |
@@ -18,11 +31,36 @@ Start with **Setup wizard** (web UI) or `scripts\doctor.ps1`: they test each lay
 
 | Symptom | Fix |
 |---|---|
+| Port **8000 is already in use** (`start.ps1` says so) | Find the owner: `netstat -ano \| findstr :8000` then `tasklist /FI "PID eq <pid>"`. Close that program, or start NEXUS elsewhere: `scripts\start.ps1 -Port 8010` and open http://127.0.0.1:8010. LM Studio's own port 1234 is separate; if *that* clashes, change it in LM Studio's Developer tab and in *Settings > Model endpoint*. |
+| `start.ps1` says "already running" but the page does not load | A stale process: `scripts\stop.ps1`, then `start.ps1`. If still stuck, end `python.exe` in Task Manager (Details tab; the one using `.venv`). |
+| Browser says `host_blocked` (403) | You opened NEXUS through a name other than `localhost`/`127.0.0.1` (e.g. your PC name or LAN IP). Use `http://127.0.0.1:8000`, or add the name in *Settings > Privacy > Allowed host names* (not recommended on shared networks). |
 | Header says **LM Studio offline** | In LM Studio > Developer: load a model and **Start Server**. Check the URL in *Settings > Model endpoint* (default `http://localhost:1234/v1`). |
 | Works in browser but NEXUS says unreachable | Windows firewall or VPN. Try `http://127.0.0.1:1234/v1` instead of `localhost`. |
 | "rejected the API key" | Set `NEXUS_LMSTUDIO_API_KEY` in `.env` or Settings. |
 | Browser shows "Cannot reach the NEXUS backend" | The backend is not running: `scripts\start.ps1`. |
 | API calls from another site are rejected (`origin_blocked`) | By design. Only `localhost:5173/8000` origins may call the API; add yours in *Settings > Privacy* if you build your own UI. |
+
+## Memory (RAM / disk) problems
+
+| Symptom | Fix |
+|---|---|
+| LM Studio says it cannot load the model / the PC freezes when the model loads | The model (plus context) does not fit in free RAM/VRAM. Close other programs, pick a smaller or more quantized model (3-4B or Q4), lower Context Length in LM Studio. Rule of thumb: Q4 needs roughly 0.6 GB per billion parameters plus context. |
+| Very slow generation (seconds per word) | Running on CPU or swapping to disk. Smaller model; make sure GPU offload is enabled in LM Studio. |
+| Ingestion is slow or the PC lags | *Data ingestion > New job > Filtering and quality rules*: lower **Parallel workers** to 1 and **batch size** to 16; ingest folders in smaller pieces. A real embedding model also slows ingestion (one model call per batch). |
+| `MemoryError` / backend killed while ingesting a huge file | Streaming keeps RAM low for CSV/JSONL/Parquet/PDF, but a single huge JSON *object* or DOCX loads fully: convert JSON to JSONL; split the document. |
+| Fine-tuning refused as "not feasible" | By design (the estimate exceeds your GPU/RAM). Use a smaller model or skip fine-tuning; retrieval and memory still work. |
+| "Not enough free disk space" | Free space: a job needs roughly the input size (raw copy is skipped for files already under `data\`) plus the index, plus the 500 MB reserve (*Settings > Ingestion & storage*). |
+
+## Embeddings (failed or unavailable)
+
+| Symptom | Fix |
+|---|---|
+| Models page: embedding *Error* / red message | LM Studio is off, the embedding model id is wrong, or the model is not available. Re-run the `/v1/embeddings` test in LM_STUDIO_GUIDE.md section 4; fix the id; press *Save embedder*. If you want to keep working: set provider back to *Built-in (lexical, offline)*. |
+| Ingestion job **paused: Embedding model unavailable** | Nothing is lost; the checkpoint is kept. Fix LM Studio, then **Resume**. |
+| Searches say "keyword search only. Re-index to fix." | The collection was built with a different embedder. *Collections > Re-index*. Memory has its own button (*Memory > Re-index memories*). |
+| Re-index fails midway | The embedder went away; start LM Studio and press Re-index again (it restarts that collection from scratch). |
+| Dimension/"embedder changed" confusion after switching vector store | Press Re-index on every collection (vectors are not migrated between ChromaDB and the SQLite store). |
+| Chat still answers but without sources | Retrieval degraded (embedder down): the answer bubble says so. Fix the embedder; keyword search keeps working meanwhile. |
 
 ## Retrieval / knowledge
 
@@ -34,7 +72,8 @@ Start with **Setup wizard** (web UI) or `scripts\doctor.ps1`: they test each lay
 | PDF shows "page has no extractable text" | The PDF is a scan. OCR is not built in; run OCR first (e.g. in Acrobat/ocrmypdf). |
 | Ingestion job **paused: Quality gate** | Too many rejected/quarantined chunks. Open *Rejected records*, fix the filter or the source, then Resume (or "Resume anyway"). |
 | Job **paused: Embedding model unavailable** | LM Studio stopped or the embedding model is not loaded. Fix it and Resume - the checkpoint is kept. |
-| Job **interrupted** after a crash/restart | Press Resume. It continues from the last committed batch. |
+| Job **interrupted** after a crash/restart/closed window | Open the job and press **Resume**; it continues from the last committed batch (no duplicates are created; this was tested with a simulated hard crash). Items that show *failed* (e.g. a file was locked) are retried with the **Retry N failed** button. If you cannot find the job, *Data ingestion > Jobs*. |
+| `nexus.cli ingest` fails with a vector-store/lock error while the app is running | Stop NEXUS first (`scripts\stop.ps1`); use the web UI while it runs. |
 | Disk full error | Free space; the job refuses to start with less than *Keep this much disk free* (default 500 MB) after the estimated need. |
 
 ## Agent

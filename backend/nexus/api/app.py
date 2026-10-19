@@ -41,6 +41,14 @@ def create_app(ctx: AppContext | None = None) -> FastAPI:
 
     @app.middleware("http")
     async def origin_guard(request: Request, call_next):
+        # DNS-rebinding guard: a hostile web page can point its own domain at 127.0.0.1; its requests then carry that domain
+        # in the Host header (and a matching Origin). Only accept the host names this local app is meant to be reached by.
+        host = request.headers.get("host", "")
+        hostname = host[: host.rfind("]") + 1] if host.startswith("[") else host.rsplit(":", 1)[0] if ":" in host else host
+        if hostname.lower() not in [h.lower() for h in ctx.settings.allowed_hosts]:
+            ctx.db.audit("system", "api.blocked_host", {"host": host[:100], "path": request.url.path})
+            return JSONResponse({"error": {"code": "host_blocked", "message": f"Requests addressed to '{host}' are not allowed.",
+                                           "hint": "Open NEXUS at http://127.0.0.1:8000 or http://localhost:8000, or add the host name under Settings > Privacy > Allowed host names."}}, status_code=403)
         if request.method in ("POST", "PUT", "PATCH", "DELETE"):
             origin = request.headers.get("origin")
             if origin and origin not in ctx.settings.allow_cors_origins and origin != f"{request.url.scheme}://{request.headers.get('host', '')}":

@@ -6,15 +6,59 @@ Results below were produced in the build environment (Linux, Python 3.13, Node 2
 
 | Suite | Command | Result |
 |---|---|---|
-| Backend (pytest) | `cd backend && python -m pytest tests -v` | **101 passed**, 0 failed, 0 skipped (~95 s) |
+| Backend (pytest) | `cd backend && python -m pytest tests -v` | **103 passed**, 0 failed, 0 skipped (~95 s) |
 | Frontend unit tests (vitest) | `cd frontend && npm test` | **11 passed** |
 | Frontend type-check + production build | `npm run build` | passed |
 | Browser end-to-end (Playwright + Chromium) | `cd backend && python tests/e2e_browser_smoke.py` | **passed**: dashboard, document upload, grounded streaming chat with visible `[S1]` citation, all 10 pages, setup wizard (>=10/15 checks), zero console errors |
 | Linux start/stop scripts | `scripts/setup.sh`, `start.sh`, `stop.sh` | exercised; found and fixed a PID-tracking bug |
+| Windows PowerShell scripts, **under PowerShell Core 7.4 on Linux** | parser check of all 7 `.ps1`; `Find-Python` with a fake multi-argument `py` launcher; `start.ps1`/`stop.ps1` flow (start, health wait, already-running, stale PID file, port conflict, startup failure with log tail, stop) with small shims for `.venv\Scripts\python.exe` and `taskkill`; `-WindowStyle` removed in the scratch copy because Linux PowerShell rejects it | parse OK; logic verified. **This is not Windows** - see section C below |
 
 Important context for reading these results:
 * **LM Studio was simulated.** `backend/tests/mock_lmstudio.py` is a real HTTP server speaking LM Studio's protocol (OpenAI-compatible chat with SSE streaming, `/v1/models`, `/api/v0/models`, `/v1/embeddings`, load/unload, auth and error shapes). It exercises the real `LMStudioProvider` code but is **not a language model**. Agent-loop tests use a deterministic scripted model. These tests prove the integration and orchestration logic; they say nothing about how well a real model answers.
 * The sandbox **blocked Hugging Face and public websites**, so web/dataset flows were tested against local HTTP servers, and Hugging Face against a fake API object.
+
+## Verification matrix (what kind of evidence exists for what)
+
+### A. Verified by automated tests in the build environment (Linux, mocks/fakes where noted)
+
+* All 23 acceptance workflows below, within the limits noted per row.
+* Permissions, approvals, sandbox escape attempts, path policy, SSRF/Host/Origin guards, prompt-injection quarantine and tainting.
+* Resumable ingestion (crash simulation), duplicate/quality/quarantine logic, dataset downloads with resume/checksums (local server), Hugging Face *wrapper* logic (fake API object).
+* Learning loop, regression suite, workflow candidates; fine-tuning state machine; a **real** CPU LoRA run on a tiny locally built model.
+* Frontend components, SSE parsing, and a headless-browser run of the real UI against the LM Studio mock.
+* `.env` parsing incl. Windows BOM/CRLF; Windows-style script logic under PowerShell Core (see summary table).
+
+### B. Verified with real external services
+
+**None.** No real LM Studio, no real language model, no real embedding model, no Hugging Face, no public website, no search provider, no Windows host was available. The only "real" components exercised were: PyTorch/Transformers/PEFT (CPU, tiny random model), ChromaDB, PyMuPDF, Chromium/Playwright, and PowerShell Core - all local.
+
+### C. Requires testing on your computer (not yet verified anywhere)
+
+| Area | What to check | Where |
+|---|---|---|
+| Windows install | `setup.ps1` end to end (Python discovery, venv, pip wheels for PyMuPDF/pyarrow/numpy, optional ChromaDB, npm build) | INSTALL_WINDOWS.md |
+| Windows process management | `start.ps1` / `stop.ps1`: `Start-Process -WindowStyle Hidden`, `Get-NetTCPConnection`, `taskkill /T`, `npm run dev` child cleanup, PID reuse check | docs/FIRST_RUN_CHECKLIST.md |
+| Execution policy / Store-python alias | behaviour on your PC | docs/TROUBLESHOOTING.md |
+| ChromaDB on Windows | loads and persists; else `NEXUS_VECTOR_BACKEND=sqlite` | INSTALL_WINDOWS.md |
+| Real LM Studio | connection, model discovery incl. `/api/v0/models`, streaming, `tool_use` detection, load/unload REST endpoints | LM_STUDIO_GUIDE.md section 3 |
+| Real embedding model | `/v1/embeddings` response size, semantic ranking vs lexical, re-index time | LM_STUDIO_GUIDE.md sections 4-5, ACCEPTANCE_TEST.md Part H |
+| Real model answer quality | grounded answers, citation habit, agent JSON-action reliability with your model | ACCEPTANCE_TEST.md Part D |
+| Live web import | `https://example.com` (and robots.txt behaviour on real sites) | ACCEPTANCE_TEST.md Part B |
+| Hugging Face | inspect/plan/download of a small public dataset; licence and size fields; gated-dataset message | DATASET_GUIDE.md section 7 |
+| Windows sandbox / commands | `python_sandbox` and `run_command` (`ping`, `ipconfig`, `netstat`) behaviour; OS limits do not exist on Windows | docs/SECURITY.md |
+| Windows firewall / exposure | `netstat -ano \| findstr :8000` shows 127.0.0.1 only | docs/SECURITY.md |
+| Performance on your hardware | ingestion speed, RAM use with your model loaded | docs/TROUBLESHOOTING.md |
+
+### D. Incomplete or deliberately not built
+
+* No user authentication on the API (localhost + Host/Origin guards only); no multi-user mode; no PostgreSQL/pgvector (documented upgrade path only).
+* No OCR for scanned PDFs, no vision/image input.
+* JavaScript page rendering (Playwright) and search providers (SearxNG/Brave) are implemented but unexercised; they need extra setup.
+* GPU / QLoRA training, merge -> GGUF -> quantize export, and `lms import` flow are implemented as documented commands but never run; real-model fine-tuning quality is unknown.
+* Real semantic-embedding retrieval quality is unmeasured; the built-in embedder is lexical.
+* Scale beyond 20 000 indexed rows (and 1.2 M streamed rows) not exercised.
+* The sandbox is best-effort isolation (weaker on Windows).
+* The pcap analyser supports classic pcap/pcapng Ethernet/raw-IP only; install `tshark`-based workflows are not integrated.
 
 ## Your 23 acceptance workflows
 
@@ -48,9 +92,9 @@ Important context for reading these results:
 
 Permission engine (modes, fail-safe on unknown mode, path traversal/symlink/protected files, command allow-list and argument injection, authorized targets, approval binding and single use, the agent cannot approve itself), sandbox escape attempts and resource limits (CPU loop, memory bomb), SSRF/allow/deny policy, robots.txt, CAPTCHA/403 handled as "blocked" without bypass, resumable downloads and checksum verification, Hugging Face wrapper (gating, licence, splits, checksum), vector backends (SQLite and ChromaDB parametrized), embedder-mismatch degradation, quality gate, embedding outage pauses instead of failing, native tool-call path, malformed model output repair, step limits and repeated-failure blocking, task recovery after restart, extension proposal workflow, regression suite catching a bad "improvement", pcap/log/config/code analysis, origin guard and settings validation, hash-chained audit, backup/trash restore.
 
-## Bugs found by testing (and fixed)
+## Bugs found by testing and review (and fixed)
 
-Race that let two workers index the same chunk (duplicate check moved inside the write transaction) - similarity floor missing (unrelated text returned) - sandbox-allow-list semantics - `db_query` authorizer ordering - tool "denied" state mis-labelled "failed" - learning hook racing the task's terminal status - FastAPI turning an absent boolean form field into `false` (upload did not wait) - **front-end upload bug** (live `FileList` cleared before use, found only by the browser run) - LM Studio's `embeddings` model type not normalised - **`start.sh` PID tracking** - invalid `execution_mode` falling through to the most permissive branch.
+Race that let two workers index the same chunk (duplicate check moved inside the write transaction) - similarity floor missing (unrelated text returned) - sandbox-allow-list semantics - `db_query` authorizer ordering - tool "denied" state mis-labelled "failed" - learning hook racing the task's terminal status - FastAPI turning an absent boolean form field into `false` (upload did not wait) - **front-end upload bug** (live `FileList` cleared before use, found only by the browser run) - LM Studio's `embeddings` model type not normalised - **`start.sh` PID tracking** - invalid `execution_mode` falling through to the most permissive branch - (handover review) **`setup.ps1` built a nested array for multi-argument launchers such as `py -3.12`** (rewritten) - `.env` saved by Windows Notepad (UTF-8 BOM) corrupting the first variable - API accepted any `Host` header (DNS-rebinding hole; now `allowed_hosts` guard) - `start.ps1` lacked a port check and trusted stale PID files.
 
 ## Not run / not verified
 
@@ -63,6 +107,8 @@ Race that let two workers index the same chunk (duplicate check moved inside the
 * `sentence-transformers` embedding provider (code present, not exercised).
 
 ## Reproduce
+
+The measured expectations for the sample PDF/CSV are in [ACCEPTANCE_TEST.md](ACCEPTANCE_TEST.md).
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\run-tests.ps1       # backend + frontend

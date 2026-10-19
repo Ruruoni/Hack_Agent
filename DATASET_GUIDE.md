@@ -23,7 +23,7 @@ Large files are **streamed**: PDFs page by page, CSV/JSONL/Parquet in batches, J
    * **Quarantine** - chunks that look like instructions aimed at an AI. Not searchable until *you* release them.
    * **Schema & quality** - per-column types, missing-value rate, and a warning if the record structure changed inside the file.
    * **Report** - the full batch report, including a retrieval self-check. Copy or find it later in `data\reports\`.
-6. **Pause / Resume / Cancel / Retry failed** at any time. If the app or PC stops, the job becomes *interrupted*; press **Resume** and it continues from the last checkpoint.
+6. **Pause / Resume / Cancel / Retry N failed** (the button shows the count) at any time. If the app or PC stops, the job becomes *interrupted*; press **Resume** and it continues from the last checkpoint.
 
 ### Dataset manager (Data ingestion > Dataset manager)
 1. Enter a **Hugging Face id** (`owner/name`), a **direct URL**, or a **local path**, then **Inspect**. You see licence, whether login is required, every file with its size and split (train/test/validation), and warnings.
@@ -35,14 +35,16 @@ Large files are **streamed**: PDFs page by page, CSV/JSONL/Parquet in batches, J
 
 ## 3. Command line
 
-Run from the `backend` folder with the project's Python (`..\.venv\Scripts\python.exe` on Windows):
+> **Stop NEXUS first** (`scripts\stop.ps1`) before using `ingest` or `dataset import` on the command line: if ChromaDB is installed its vector store must be used by one process at a time. `dataset inspect` and `dataset plan` only read and plan, but every CLI command opens the application data folder, so the safest habit is to stop NEXUS before any CLI command.
+
+Run from the `backend` folder with the project's Python (`..\.venv\Scripts\python.exe` on Windows). The Hugging Face ids below are **examples only - not verified from the build environment** (Hugging Face was unreachable there); dataset ids move, so confirm them on https://huggingface.co/datasets:
 
 ```powershell
 cd backend
 ..\.venv\Scripts\python.exe -m nexus.cli ingest C:\data\manuals C:\data\notes.md --collection manuals
-..\.venv\Scripts\python.exe -m nexus.cli dataset inspect stanfordnlp/imdb
-..\.venv\Scripts\python.exe -m nexus.cli dataset plan stanfordnlp/imdb --splits train
-..\.venv\Scripts\python.exe -m nexus.cli dataset download stanfordnlp/imdb --splits train
+..\.venv\Scripts\python.exe -m nexus.cli dataset inspect cornell-movie-review-data/rotten_tomatoes
+..\.venv\Scripts\python.exe -m nexus.cli dataset plan cornell-movie-review-data/rotten_tomatoes --splits train
+..\.venv\Scripts\python.exe -m nexus.cli dataset download cornell-movie-review-data/rotten_tomatoes --splits train
 ..\.venv\Scripts\python.exe -m nexus.cli dataset download https://example.org/data.csv
 ..\.venv\Scripts\python.exe -m nexus.cli dataset import <download id printed above> --collection imdb
 ```
@@ -69,3 +71,42 @@ Training data is a **separate** pipeline (*Models & learning > Fine-tuning*): JS
 * Prefer text-based PDFs. Scanned PDFs have no extractable text (reported per page); OCR is not built in.
 * After changing the embedding model, press **Re-index** on each collection.
 * To delete a dataset's knowledge: *Knowledge > Collections > Delete*. The raw originals in `data\raw\` / `data\downloads\` are kept until you delete them yourself.
+
+## 7. Your first Hugging Face import: small first (step by step)
+
+**Never start with a large dataset.** Prove the whole chain on something tiny, then scale.
+
+1. **Pick a small, text-only dataset.** On the dataset's Hugging Face page check: the **licence** (card sidebar), **"Size of downloaded dataset files"** (aim for under ~5 MB for the first test), and that it is *not* gated (no "You need to agree to share your contact information" banner). Prefer text columns; image/audio datasets are not useful here. Example family: a small text-classification dataset such as `cornell-movie-review-data/rotten_tomatoes` (unverified id, see above).
+2. **Inspect without downloading** (GUI: *Data ingestion > Dataset manager > Inspect*; or CLI from `backend` with NEXUS running or stopped):
+
+```powershell
+..\.venv\Scripts\python.exe -m nexus.cli dataset inspect cornell-movie-review-data/rotten_tomatoes
+```
+
+   Read the output: `license` (a value, or "not declared" - then find out the terms yourself before using the data), `requires_auth` / `gated`, every file with its **size in bytes** and detected split (`train`/`test`/`validation`), and `total_bytes`. Check the licence permits your use.
+3. **Plan the smallest download** - one file or one split - and read the size/disk verdict:
+
+```powershell
+..\.venv\Scripts\python.exe -m nexus.cli dataset plan cornell-movie-review-data/rotten_tomatoes --splits train
+```
+
+   `needs_explicit_approval: true` means it exceeds the automatic limit (default 500 MB, adjustable in Settings): stop and reconsider for a first test. `disk_ok` must be true.
+4. **Download** (NEXUS stopped if you use the CLI; or press *Download* in the GUI):
+
+```powershell
+..\.venv\Scripts\python.exe -m nexus.cli dataset download cornell-movie-review-data/rotten_tomatoes --splits train
+```
+
+   The output prints a download `id`, `status: ready` and the destination folder under `data\downloads\`. Gated datasets fail with a message that tells you to set `HF_TOKEN` in `.env` (never paste tokens into chat).
+5. **Confirm the originals are preserved.** The files sit unchanged in `data\downloads\<dataset>_<id>\`. NEXUS only reads them; ingestion indexes copies of the *text*, never edits the files, and does not copy them again. To prove it:
+
+```powershell
+Get-FileHash data\downloads\*\* -Algorithm SHA256   # note the hashes, ingest, run it again: identical
+```
+
+   When the source provides checksums (large LFS files) NEXUS verifies them automatically and marks the download `failed` with "SHA-256 mismatch" if they differ.
+6. **Preview, then import into a test collection.** GUI: *Preview* then *Import into pipeline* with collection `hf-test`. CLI: `..\.venv\Scripts\python.exe -m nexus.cli dataset import <download id> --collection hf-test`.
+7. **Check the batch report** (printed by the CLI; *Report* tab in the GUI): records read vs the file's known row count, **rejected** (and why), **duplicates**, **quarantined**, retrieval self-check recall. Then run two searches in *Knowledge & memory > Search* using words you can see in the preview. Expected: results from the dataset file with locators like `rows 1-25`.
+8. **Only then scale up.** Use *Estimate size and time* on the bigger source, keep batch size at the suggested value, watch free disk space (originals + index), and expect the quality gate to *pause* the job rather than index junk. Interrupt it once on purpose (press *Pause* or close NEXUS) and confirm *Resume* continues - the same check you rely on for big imports.
+
+Datasets with huge rows or non-text content (images, audio, nested binary columns) produce poor chunks; skip them.

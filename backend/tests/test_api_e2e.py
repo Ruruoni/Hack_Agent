@@ -13,7 +13,7 @@ from nexus.llm.embeddings import HashEmbedder
 
 @pytest.fixture()
 def client(lm_ctx):
-    return TestClient(create_app(lm_ctx))
+    return TestClient(create_app(lm_ctx), base_url="http://localhost")
 
 
 def stream_chat(client, **body):
@@ -122,7 +122,7 @@ def test_ingest_api_pause_report_export(client, tmp_path):
 def test_agent_mode_over_api_with_approval_flow(lm_ctx, settings):
     llm = ScriptedLLM()
     ctx = AppContext(settings, provider=llm, embedder=HashEmbedder())
-    c = TestClient(create_app(ctx))
+    c = TestClient(create_app(ctx), base_url="http://localhost")
     victim = ctx.settings.path("workspace", "old.txt")
     victim.write_text("bye")
     llm.push(PLAN, act("fs_delete", path=str(victim)), final("Removed old.txt (moved to trash)."))
@@ -146,7 +146,7 @@ def test_agent_mode_over_api_with_approval_flow(lm_ctx, settings):
 def test_global_stop_button_cancels_everything(lm_ctx, settings):
     llm = ScriptedLLM()
     ctx = AppContext(settings, provider=llm, embedder=HashEmbedder())
-    c = TestClient(create_app(ctx))
+    c = TestClient(create_app(ctx), base_url="http://localhost")
     ctx.settings.path("workspace", "z.txt").write_text("z")
     llm.push(PLAN, act("fs_delete", path="z.txt"))
     t = c.post("/api/tasks", json={"objective": "delete z"}).json()
@@ -161,7 +161,7 @@ def test_global_stop_button_cancels_everything(lm_ctx, settings):
 def test_setup_wizard_full_run_and_restart_persistence(settings, mock_lm, tmp_path):
     settings.lmstudio_base_url = mock_lm.base_url
     ctx = AppContext(settings, embedder=HashEmbedder())
-    c = TestClient(create_app(ctx))
+    c = TestClient(create_app(ctx), base_url="http://localhost")
     # a tiny local page stands in for the "public webpage" step (the sandbox has no internet)
     from conftest import WebServer
     ws = WebServer()
@@ -178,7 +178,7 @@ def test_setup_wizard_full_run_and_restart_persistence(settings, mock_lm, tmp_pa
         again = c.post("/api/setup/run/memory_persist", json={"verify": True}).json()
         assert not again["ok"] and "not been restarted" in again["detail"]          # same process: honest refusal
         ctx2 = AppContext(settings, embedder=HashEmbedder())                       # --- restart ---
-        c2 = TestClient(create_app(ctx2))
+        c2 = TestClient(create_app(ctx2), base_url="http://localhost")
         after = c2.post("/api/setup/run/memory_persist", json={"verify": True}).json()
         assert after["ok"], after
         steps = {s["id"]: s for s in c2.get("/api/setup/steps").json()}
@@ -195,3 +195,17 @@ def test_external_urls_in_settings_cannot_enable_agent_privilege_escalation(clie
         assert "execution_mode" not in props and "auto_allow" not in props and "authorized_targets" not in props
     r = lm_ctx.executor.execute("fs_write", {"path": str(lm_ctx.settings.path("settings.json")), "content": '{"execution_mode":"restricted_automation"}'}, ToolContext(app=lm_ctx))
     assert r.state == "denied" and lm_ctx.settings.execution_mode == "approval_required"
+
+
+def test_dns_rebinding_host_header_is_rejected(client, lm_ctx):
+    """A hostile site that rebinds its own domain to 127.0.0.1 sends Host/Origin of that domain: both must be refused."""
+    r = client.get("/api/health", headers={"Host": "evil.example.com:8000"})
+    assert r.status_code == 403 and r.json()["error"]["code"] == "host_blocked"
+    r = client.post("/api/stop", headers={"Host": "evil.example.com:8000", "Origin": "http://evil.example.com:8000"})
+    assert r.status_code == 403 and not lm_ctx.stop_event.is_set()
+    assert client.get("/api/health", headers={"Host": "127.0.0.1:8000"}).status_code == 200
+    assert client.get("/api/health", headers={"Host": "[::1]:8000"}).status_code == 200
+    assert client.get("/api/health", headers={"Host": "localhost"}).status_code == 200
+    lm_ctx.settings.allowed_hosts.append("nexus.lan")
+    assert client.get("/api/health", headers={"Host": "nexus.lan:8000"}).status_code == 200
+    assert lm_ctx.db.scalar("SELECT COUNT(*) FROM audit_log WHERE event='api.blocked_host'") == 2
