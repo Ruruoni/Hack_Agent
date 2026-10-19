@@ -23,8 +23,9 @@ VEC_COLLECTION = "memories"
 
 
 class MemoryStore:
-    def __init__(self, db: Database, vectors: VectorStore, get_embedder: Callable[[], Embedder]):
+    def __init__(self, db: Database, vectors: VectorStore, get_embedder: Callable[[], Embedder], min_similarity: float = 0.15):
         self.db, self.vectors, self.get_embedder = db, vectors, get_embedder
+        self.min_similarity = min_similarity
 
     # ---- CRUD -----------------------------------------------------------------------
     def add(self, layer: str, content: str, *, kind: str = "fact", title: str = "", project_id: str = "default",
@@ -109,7 +110,7 @@ class MemoryStore:
             emb = self.get_embedder()
             stored = self.db.scalar("SELECT value FROM meta WHERE key='memory_embedder'", (), emb.id)
             if stored == emb.id:
-                vec_rank = [i for i, _ in self.vectors.query(VEC_COLLECTION, emb.embed([query])[0], k * 4)]
+                vec_rank = [i for i, sim in self.vectors.query(VEC_COLLECTION, emb.embed([query])[0], k * 4) if sim >= self.min_similarity]
         except LLMError:
             pass
         kw_rank: list[str] = []

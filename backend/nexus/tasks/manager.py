@@ -160,14 +160,14 @@ class TaskManager:
         t = self.db.get("tasks", tid)
         report = self._execution_report(tid)
         full = (result + ("\n\n" + report if report else "")).strip() if result or report else ""
-        self._set(tid, status=status, result=full, error=error, progress=1.0 if status == "completed" else (t or {}).get("progress", 0), finished=now())
-        self.event(tid, "info" if status == "completed" else "warn", status, (result or error)[:500])
-        try:
+        try:   # learn BEFORE the terminal status becomes visible, so observers never see a finished task without its lessons
             learn = getattr(self.app, "learning", None)
-            if learn:
-                learn.on_task_finished(self.db.get("tasks", tid))
+            if learn and t:
+                learn.on_task_finished({**t, "status": status, "result": full, "error": error})
         except Exception:  # noqa: BLE001
             log.exception("learning hook failed")
+        self._set(tid, status=status, result=full, error=error, progress=1.0 if status == "completed" else (t or {}).get("progress", 0), finished=now())
+        self.event(tid, "info" if status == "completed" else "warn", status, (result or error)[:500])
 
     def _execution_report(self, tid: str) -> str:
         runs = self.runs(tid)
@@ -185,14 +185,16 @@ class TaskManager:
             lines.append(f"  - `{r['tool']}` -> {r['state']}" + (" (verified)" if r["verified"] else "") + (f": {r['error'][:100]}" if r["error"] else ""))
         return "\n".join(lines)
 
-    def _context_for(self, task: dict) -> str:
+    def _context_for(self, task: dict) -> tuple[str, list[str]]:
         parts = []
+        used: list[str] = []
         mems = self.app.memory.search(task["objective"], layers=["procedural", "episodic", "semantic", "preference", "project"], k=4,
                                       project_id=task["project_id"])
         if mems:
             parts.append("Relevant memory (may be outdated or unverified - check 'trust'):\n" + "\n".join(
                 f"- [{m['layer']}/{m['trust']}] {m['content'][:300]}" for m in mems))
-            self.app.memory.touch([m["id"] for m in mems])
+            used = [m["id"] for m in mems]
+            self.app.memory.touch(used)
         try:
             skills = self.app.skills.match(task["objective"])
         except Exception:  # noqa: BLE001
@@ -203,7 +205,7 @@ class TaskManager:
         prefs = self.app.memory.preferences(task["project_id"], 8)
         if prefs:
             parts.append("User preferences:\n" + "\n".join(f"- {p['content']}" for p in prefs))
-        return "\n\n".join(parts)
+        return "\n\n".join(parts), used
 
     def _run(self, tid: str) -> None:
         s = self.app.settings
@@ -225,7 +227,7 @@ class TaskManager:
             if not task["plan"]:
                 self._set(tid, status="planning")
                 self.event(tid, "info", "planning", "Retrieving memory and drafting a plan")
-                ctx_text = self._context_for(task)
+                ctx_text, st["memory_ids"] = self._context_for(task)
                 st["context"] = ctx_text
                 plan = self._make_plan(task["objective"], ctx_text, sys_prompt)
                 self._set(tid, plan=plan, state=st)

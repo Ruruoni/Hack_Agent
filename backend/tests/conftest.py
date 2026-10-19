@@ -228,3 +228,14 @@ def web_server():
     w = WebServer()
     yield w
     w.stop()
+
+
+def make_pdf_bytes(pages):
+    import pymupdf
+    doc = pymupdf.open()
+    for text in pages:
+        page = doc.new_page()
+        page.insert_textbox(pymupdf.Rect(50, 50, 550, 780), text, fontsize=11)
+    data = doc.tobytes()
+    doc.close()
+    return data

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import uuid
 from pathlib import Path
 
 from .config import Settings, load_settings
@@ -28,6 +29,7 @@ class AppContext:
         self.db = Database(self.settings.db_path)
         self.db.init()
         self.bus = EventBus()
+        self.boot_id = uuid.uuid4().hex           # changes on every process start (used by the persistence check)
         self.stop_event = threading.Event()      # the global stop button
         self._provider_override = provider
         self._embedder_override = embedder
@@ -64,6 +66,12 @@ class AppContext:
         self.skills = SkillManager(self)
         self._register_skill_tools(Tool, ToolContext, fail)
         self.tools.load_plugins(self.settings.path("extensions", "active"))
+        from .evaluation.regression import EvaluationManager
+        from .memory.learning import LearningManager
+        self.evaluation = EvaluationManager(self)
+        self.learning = LearningManager(self)
+        from .training.manager import TrainingManager
+        self.training = TrainingManager(self)
         self.tasks = TaskManager(self)
         self.research.recover()
         n = self.tasks.recover()
