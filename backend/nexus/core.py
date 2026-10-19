@@ -46,7 +46,46 @@ class AppContext:
         self.db.audit("system", "app.start", {"vector_backend": self.vectors.name})
 
     def _late_init(self) -> None:
-        """Hook for modules registered in later stages (permissions, tools, tasks, ...)."""
+        from .permissions.policy import PermissionEngine
+        from .skills.manager import SkillManager
+        from .tasks.manager import TaskManager
+        from .tools.builtin import register_all
+        from .tools.executor import ToolExecutor
+        from .tools.registry import Tool, ToolContext, fail
+        from .web_research.research import ResearchManager
+        self.perms = PermissionEngine(self.settings, self.db)
+        self.tools = __import__("nexus.tools.registry", fromlist=["ToolRegistry"]).ToolRegistry()
+        self.executor = ToolExecutor(self)
+        self.research = ResearchManager(self.settings, self.db, self.stop_event, on_event=self.bus.publish)
+        self.ingestion.url_fetcher = self.research.url_fetcher
+        from .datasets.manager import DatasetManager
+        self.datasets = DatasetManager(self.settings, self.db, self.ingestion, on_event=self.bus.publish)
+        register_all(self.tools, self)
+        self.skills = SkillManager(self)
+        self._register_skill_tools(Tool, ToolContext, fail)
+        self.tools.load_plugins(self.settings.path("extensions", "active"))
+        self.tasks = TaskManager(self)
+        self.research.recover()
+        n = self.tasks.recover()
+        if n:
+            log.warning("Marked %d interrupted task(s) as resumable", n)
+
+    def _register_skill_tools(self, Tool, ToolContext, fail) -> None:
+        S = lambda **p: {"type": "object", "properties": p, "additionalProperties": False}  # noqa: E731
+
+        def run_skill(ctx, a):
+            return self.skills.run(a["name"], a.get("params") or {}, ctx)
+
+        def propose_extension(ctx, a):
+            p = self.skills.propose_extension(a["capability"], a.get("rationale", ""), origin=f"task:{ctx.task_id}", dependencies=a.get("dependencies"))
+            return {"ok": True, "proposal_id": p["id"], "status": p["status"],
+                    "note": "Saved as a PROPOSAL. It is inactive; a human must test and approve it in Skills > Extensions."}
+        self.tools.register(Tool("run_skill", "Run an approved reusable workflow skill by name. Each step is still permission-checked.",
+                                 {**S(name={"type": "string"}, params={"type": "object"}), "required": ["name"]}, run_skill,
+                                 effects={"read"}, risk="medium", timeout=900))
+        self.tools.register(Tool("propose_extension", "Record that a needed capability is missing and draft an extension proposal for a human to review.",
+                                 {**S(capability={"type": "string"}, rationale={"type": "string"}, dependencies={"type": "array", "items": {"type": "string"}}),
+                                  "required": ["capability"]}, propose_extension, effects={"write_scratch"}, risk="low"))
 
     # -- provider / embedder (rebuilt when settings change) ----------------------------------
     @property
