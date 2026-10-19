@@ -1,0 +1,9 @@
+# OPTIONAL: only needed for the model fine-tuning pipeline (Stage 7).
+# Install the right PyTorch build for your GPU first: https://pytorch.org/get-started/locally/
+transformers>=4.40
+peft>=0.10
+trl>=0.9
+datasets>=2.18
+accelerate>=0.29
+# 4-bit QLoRA needs bitsandbytes (CUDA, Linux/Windows). Skip if you have no NVIDIA GPU.
+# bitsandbytes>=0.43
