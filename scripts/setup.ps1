@@ -67,14 +67,25 @@ if (-not (Test-Path ".env")) { Copy-Item ".env.example" ".env"; Write-Host "Crea
 
 Write-Host "== 5/6 Web interface (Node.js)" -ForegroundColor Cyan
 $webOk = $false
+if (Get-Command node -ErrorAction SilentlyContinue) {
+    $nv = (& node --version 2>$null)
+    Write-Host "Node.js $nv"
+    $nmajor = 0; if ($nv -match '^v(\d+)') { $nmajor = [int]$Matches[1] }
+    if ($nmajor -lt 18 -or $nmajor -gt 24 -or ($nmajor % 2) -eq 1) {
+        Write-Host "Node $nv is not an LTS release (tested: 22). Very new 'Current' releases can crash the build ('Zone Allocation failed'). If the build below fails, install Node 22 LTS from https://nodejs.org/ and re-run - or just skip it: a prebuilt UI is included." -ForegroundColor Yellow
+    }
+}
 if (Get-Command npm -ErrorAction SilentlyContinue) {
     Push-Location frontend
     npm install --no-audit --no-fund
     if ($LASTEXITCODE -eq 0) { npm run build; if ($LASTEXITCODE -eq 0) { $webOk = $true } }
     Pop-Location
-    if (-not $webOk) { Write-Host "The web UI could not be built (see messages above). The API still works; fix Node/npm and re-run." -ForegroundColor Yellow }
-} else {
-    Write-Host "Node.js (npm) was not found, so the web UI was not built. Install the LTS version from https://nodejs.org/, reopen PowerShell, and re-run this script." -ForegroundColor Yellow
+}
+if (-not $webOk) {
+    if (Test-Path "frontend\prebuilt\index.html") {
+        Write-Host "The web UI could not be built here, so NEXUS will use the PREBUILT UI that ships with the project (frontend\prebuilt). Everything works; only developers editing the UI need the build." -ForegroundColor Yellow
+        $webOk = $true
+    } else { Write-Host "No web UI available: the API works but the browser UI does not. Install Node.js LTS and re-run." -ForegroundColor Yellow }
 }
 
 Write-Host "== 6/6 Creating the database" -ForegroundColor Cyan

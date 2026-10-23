@@ -23,7 +23,15 @@ from ..web_research.fetcher import WebPolicyError
 from ..web_research.research import SearchError
 
 log = logging.getLogger("nexus.api")
-FRONTEND_DIST = Path(__file__).resolve().parents[3] / "frontend" / "dist"
+_FRONTEND = Path(__file__).resolve().parents[3] / "frontend"
+
+
+def _frontend_dist() -> Path:
+    """Freshly built UI (frontend/dist) wins; otherwise the committed prebuilt copy, so the UI works even when Node cannot build it."""
+    for d in (_FRONTEND / "dist", _FRONTEND / "prebuilt"):
+        if (d / "index.html").is_file():
+            return d
+    return _FRONTEND / "dist"
 
 
 def sse(obj: dict, event: str | None = None) -> str:
@@ -120,7 +128,8 @@ def create_app(ctx: AppContext | None = None) -> FastAPI:
         return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
     # ---- built frontend (production mode) -----------------------------------------------------
-    if FRONTEND_DIST.is_dir():
+    FRONTEND_DIST = _frontend_dist()
+    if (FRONTEND_DIST / "index.html").is_file():
         app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
 
         @app.get("/{path:path}", include_in_schema=False)

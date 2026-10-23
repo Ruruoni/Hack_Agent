@@ -43,7 +43,7 @@ if (Test-PortBusy $Port) {
     exit 1
 }
 
-if (-not (Test-Path "frontend\dist\index.html")) {
+if (-not (Test-Path "frontend\dist\index.html") -and -not (Test-Path "frontend\prebuilt\index.html")) {
     if (Get-Command npm -ErrorAction SilentlyContinue) {
         Write-Host "Building the web UI (first start)..." -ForegroundColor Cyan
         Push-Location frontend; npm run build; $b = $LASTEXITCODE; Pop-Location
