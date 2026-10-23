@@ -9,3 +9,4 @@ data/
 frontend/dist/
 *.log
 .DS_Store
+frontend/package-lock.json

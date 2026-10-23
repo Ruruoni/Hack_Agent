@@ -79,6 +79,14 @@ if (Get-Command npm -ErrorAction SilentlyContinue) {
     Push-Location frontend
     npm install --no-audit --no-fund
     if ($LASTEXITCODE -eq 0) { npm run build; if ($LASTEXITCODE -eq 0) { $webOk = $true } }
+    if (-not $webOk) {
+        # Known npm bug with optional native packages (e.g. @rollup/rollup-win32-x64-msvc missing): a clean reinstall fixes it.
+        Write-Host "UI build failed - retrying once with a clean reinstall (node_modules + package-lock.json removed)..." -ForegroundColor Yellow
+        Remove-Item -Recurse -Force node_modules -ErrorAction SilentlyContinue
+        Remove-Item -Force package-lock.json -ErrorAction SilentlyContinue
+        npm install --no-audit --no-fund
+        if ($LASTEXITCODE -eq 0) { npm run build; if ($LASTEXITCODE -eq 0) { $webOk = $true } }
+    }
     Pop-Location
 }
 if (-not $webOk) {
