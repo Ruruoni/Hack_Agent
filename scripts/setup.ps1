@@ -23,7 +23,9 @@ function Find-Python {
         if (-not (Get-Command $c.Exe -ErrorAction SilentlyContinue)) { continue }
         try {
             $v = & $c.Exe @($c.Args) -c "import sys; print('%d.%d' % sys.version_info[:2])" 2>$null
-            if ($LASTEXITCODE -eq 0 -and $v -and ([version]$v -ge [version]"3.10")) { return $c }
+            # 3.10 - 3.13 only: brand-new Pythons (3.14+) often lack prebuilt wheels for our dependencies, so pip tries to compile them
+            # and demands the Visual C++ Build Tools. Refusing them is kinder than failing half-way through pip.
+            if ($LASTEXITCODE -eq 0 -and $v -and ([version]$v -ge [version]"3.10") -and ([version]$v -lt [version]"3.14")) { return $c }
         } catch { }
     }
     return $null
@@ -32,8 +34,10 @@ function Find-Python {
 Write-Host "== 1/6 Checking Python" -ForegroundColor Cyan
 $py = Find-Python
 if (-not $py) {
-    Write-Host "Python 3.10+ was not found." -ForegroundColor Red
-    Write-Host "Install Python 3.12 from https://www.python.org/downloads/windows/ (tick 'Add python.exe to PATH'), then close and reopen PowerShell."
+    Write-Host "No supported Python (3.10 - 3.13) was found." -ForegroundColor Red
+    $other = (Get-Command python -ErrorAction SilentlyContinue)
+    if ($other) { Write-Host ("Found: " + (& python --version 2>&1) + " - too new (3.14+ lacks prebuilt packages and needs C++ Build Tools) or too old.") -ForegroundColor Yellow }
+    Write-Host "Install Python 3.12 (it can live next to your other Python) from https://www.python.org/downloads/windows/ (tick 'Add python.exe to PATH'), then close and reopen PowerShell."
     Write-Host "If 'python' opens the Microsoft Store, turn off the Python entries under Settings > Apps > Advanced app settings > App execution aliases."
     exit 1
 }

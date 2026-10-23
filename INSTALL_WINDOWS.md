@@ -22,7 +22,7 @@ It takes about 30-60 minutes, most of it downloads. You do not need to understan
 
 Hardware: 16 GB RAM is comfortable; 8 GB works with small models. A GPU is **not** required for NEXUS itself; it only makes the model faster. Keep at least 20 GB of free disk space (models are big).
 
-> Python 3.13 also works for the core app, but some optional packages (ChromaDB, PyTorch) publish Windows wheels later for new Python versions. **3.12 is the safest choice.**
+> **Use Python 3.12 (3.10-3.13 are accepted; 3.14 and newer are rejected by the setup script** because their packages are not prebuilt for Windows yet and pip would demand the C++ Build Tools). Python 3.13 also works for the core app, but some optional packages (ChromaDB, PyTorch) publish Windows wheels later for new Python versions. **3.12 is the safest choice.**
 
 ---
 

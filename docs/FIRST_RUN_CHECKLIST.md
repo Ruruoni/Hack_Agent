@@ -4,7 +4,7 @@ Tick each box in order. Detailed explanations: [INSTALL_WINDOWS.md](../INSTALL_W
 
 ## Part 1 - Install the tools (once)
 
-- [ ] **Python 3.12 (64-bit)** from https://www.python.org/downloads/windows/ with *Add python.exe to PATH* ticked. Check: `python --version` shows 3.11 or 3.12 (3.10+ is the minimum).
+- [ ] **Python 3.12 (64-bit)** from https://www.python.org/downloads/windows/ with *Add python.exe to PATH* ticked. Check: `python --version` shows 3.11 or 3.12 (3.10-3.13 are accepted; **not 3.14+**).
 - [ ] **Node.js LTS** from https://nodejs.org/. Check: `node --version` and `npm --version`.
 - [ ] **Git** from https://git-scm.com/download/win. Check: `git --version`.
 - [ ] **LM Studio** from https://lmstudio.ai/ and (recommended) **VS Code** from https://code.visualstudio.com/.
