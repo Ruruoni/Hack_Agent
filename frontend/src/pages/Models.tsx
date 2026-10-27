@@ -6,6 +6,8 @@ function Connection() {
   const st = useApi<J>("/api/llm/status", 6000);
   const models = useApi<J>("/api/llm/models");
   const emb = useApi<J>("/api/embeddings/status");
+  const ocr = useApi<J>("/api/ocr/status");
+  const [ocrTest, setOcrTest] = useState<J | null>(null);
   const settings = useApi<J>("/api/settings");
   const [msg, setMsg] = useState<string>("");
   const [err, setErr] = useState<unknown>(null);
@@ -49,6 +51,14 @@ function Connection() {
             <Btn small onClick={() => run("Loading", () => api.post("/api/llm/load", { model: r.id, context_length: +val("context_window") || undefined }))}>Load</Btn>
             <Btn small onClick={() => run("Unloading", () => api.post("/api/llm/unload", { model: r.id }))}>Unload</Btn></div> }]} rows={models.data?.models ?? []} empty="LM Studio reported no models." />
         <p className="mt-2 text-xs text-dim">Load/unload uses LM Studio's REST API when your version supports it; otherwise use the LM Studio app or `lms load`. See LM_STUDIO_GUIDE.md.</p>
+      </Card>
+      <Card title="OCR - text in scans, images and pictures" actions={<Btn small onClick={() => run("Testing OCR", async () => { const r = await api.post("/api/ocr/test"); setOcrTest(r); ocr.reload(); return r.message; })}>Test OCR</Btn>}>
+        <div className="space-y-2 text-sm">
+          <div className="flex flex-wrap items-center gap-2">Status: {ocr.data?.available ? <Badge tone="good">ready</Badge> : <Badge tone="bad">not available</Badge>}<Badge>mode: {ocr.data?.mode}</Badge>{ocr.data?.engine && <Badge>{ocr.data.engine}</Badge>}</div>
+          {ocr.data && !ocr.data.available && <Notice>{ocr.data.message}</Notice>}
+          <p className="text-dim">Reads: {ocr.data?.formats}. Pages without a text layer are OCR'd; pictures inside text pages and Word files are read too. {ocr.data?.languages} Change the mode and limits in Settings &gt; Ingestion &amp; storage.</p>
+          {ocrTest && <pre className="rounded-lg bg-panel2 p-2">{ocrTest.ok ? "Recognised:\n" + ocrTest.recognised : ocrTest.message}</pre>}
+        </div>
       </Card>
       <Card title="Embedding model (for semantic search)">
         <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">Current: <code>{emb.data?.id}</code> {emb.data?.ok ? <Badge tone="good">working (dim {emb.data.dim})</Badge> : emb.data?.error ? <Badge tone="bad">{emb.data.error.message}</Badge> : null}{emb.data && !emb.data.semantic && <Badge tone="warn">lexical fallback</Badge>}</div>

@@ -104,6 +104,17 @@ def cmd_restore(a) -> int:
     return 0
 
 
+def cmd_ocr_test(a) -> int:
+    c = _ctx()
+    st = c.ingestion.ocr.status()
+    print(f"OCR mode: {st['mode']}  engine: {st['engine'] or 'NOT AVAILABLE'}")
+    r = c.ingestion.ocr.self_test()
+    print(("[OK] " if r["ok"] else "[FAIL] ") + r["message"])
+    if r.get("recognised"):
+        print("Recognised text:\n  " + r["recognised"].replace("\n", "\n  "))
+    return 0 if r["ok"] else 1
+
+
 def cmd_test(a) -> int:
     import pytest
     return pytest.main([str(Path(__file__).resolve().parents[1] / "tests"), "-q", *a.args])
@@ -136,6 +147,7 @@ def main(argv: list[str] | None = None) -> None:
     r = sub.add_parser("restore", help="restore a backup zip (stop NEXUS first)")
     r.add_argument("zip")
     r.set_defaults(fn=cmd_restore)
+    sub.add_parser("ocr-test", help="check that OCR (text in scans/images) works").set_defaults(fn=cmd_ocr_test)
     t = sub.add_parser("test", help="run the automated test-suite")
     t.add_argument("args", nargs="*")
     t.set_defaults(fn=cmd_test)

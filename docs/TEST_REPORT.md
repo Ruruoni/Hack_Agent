@@ -6,7 +6,7 @@ Results below were produced in the build environment (Linux, Python 3.13, Node 2
 
 | Suite | Command | Result |
 |---|---|---|
-| Backend (pytest) | `cd backend && python -m pytest tests -v` | **103 passed**, 0 failed, 0 skipped (~95 s) |
+| Backend (pytest) | `cd backend && python -m pytest tests -v` | **116 passed**, 0 failed, 0 skipped (~95 s) |
 | Frontend unit tests (vitest) | `cd frontend && npm test` | **11 passed** |
 | Frontend type-check + production build | `npm run build` | passed |
 | Browser end-to-end (Playwright + Chromium) | `cd backend && python tests/e2e_browser_smoke.py` | **passed**: dashboard, document upload, grounded streaming chat with visible `[S1]` citation, all 10 pages, setup wizard (>=10/15 checks), zero console errors |
@@ -22,6 +22,7 @@ Important context for reading these results:
 ### A. Verified by automated tests in the build environment (Linux, mocks/fakes where noted)
 
 * All 23 acceptance workflows below, within the limits noted per row.
+* **OCR** (RapidOCR on CPU, Linux): standalone images, scanned PDFs, mixed PDFs (text layer + picture text, logos ignored, repeated pictures read once), pictures inside DOCX, multi-page TIFF, picture without text, OCR off / scanned-only / engine-missing modes, short OCR pages kept, instructions hidden in an image quarantined, reading-order logic, status/self-test API, `ocr_extract` agent tool. All inputs were **synthetic** (rendered text); real-world scans, handwriting, other languages and Windows were not tested.
 * Permissions, approvals, sandbox escape attempts, path policy, SSRF/Host/Origin guards, prompt-injection quarantine and tainting.
 * Resumable ingestion (crash simulation), duplicate/quality/quarantine logic, dataset downloads with resume/checksums (local server), Hugging Face *wrapper* logic (fake API object).
 * Learning loop, regression suite, workflow candidates; fine-tuning state machine; a **real** CPU LoRA run on a tiny locally built model.
@@ -42,6 +43,7 @@ Important context for reading these results:
 | ChromaDB on Windows | loads and persists; else `NEXUS_VECTOR_BACKEND=sqlite` | INSTALL_WINDOWS.md |
 | Real LM Studio | connection, model discovery incl. `/api/v0/models`, streaming, `tool_use` detection, load/unload REST endpoints | LM_STUDIO_GUIDE.md section 3 |
 | Real embedding model | `/v1/embeddings` response size, semantic ranking vs lexical, re-index time | LM_STUDIO_GUIDE.md sections 4-5, ACCEPTANCE_TEST.md Part H |
+| OCR on Windows and on your real documents | `nexus.cli ocr-test`, then ACCEPTANCE_TEST.md Part A2, then one of your own scans; check accuracy and speed | TROUBLESHOOTING.md > PDFs, images and OCR |
 | Real model answer quality | grounded answers, citation habit, agent JSON-action reliability with your model | ACCEPTANCE_TEST.md Part D |
 | Live web import | `https://example.com` (and robots.txt behaviour on real sites) | ACCEPTANCE_TEST.md Part B |
 | Hugging Face | inspect/plan/download of a small public dataset; licence and size fields; gated-dataset message | DATASET_GUIDE.md section 7 |
@@ -52,7 +54,7 @@ Important context for reading these results:
 ### D. Incomplete or deliberately not built
 
 * No user authentication on the API (localhost + Host/Origin guards only); no multi-user mode; no PostgreSQL/pgvector (documented upgrade path only).
-* No OCR for scanned PDFs, no vision/image input.
+* OCR (RapidOCR) handles printed English/Chinese text only; handwriting/tables/columns unreliable; no vision/image understanding.
 * JavaScript page rendering (Playwright) and search providers (SearxNG/Brave) are implemented but unexercised; they need extra setup.
 * GPU / QLoRA training, merge -> GGUF -> quantize export, and `lms import` flow are implemented as documented commands but never run; real-model fine-tuning quality is unknown.
 * Real semantic-embedding retrieval quality is unmeasured; the built-in embedder is lexical.

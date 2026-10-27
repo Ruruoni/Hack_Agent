@@ -65,6 +65,24 @@ netstat -ano | findstr :8000                                              # is s
 | Dimension/"embedder changed" confusion after switching vector store | Press Re-index on every collection (vectors are not migrated between ChromaDB and the SQLite store). |
 | Chat still answers but without sources | Retrieval degraded (embedder down): the answer bubble says so. Fix the embedder; keyword search keeps working meanwhile. |
 
+## PDFs, images and OCR
+
+NEXUS reads **scanned PDFs, photos/screenshots (PNG, JPG, TIFF, BMP, GIF, WEBP) and pictures inside PDFs and Word files** with a built-in OCR engine (RapidOCR, runs on your CPU, no internet and no separate Tesseract install). Pages that already have a text layer are read directly; pages without one are OCR'd; pictures inside text pages are OCR'd too and their text is added to the page (locator `page 3 (+picture text)`); OCR'd scans show `page 3 (OCR)`.
+
+Check it works: `powershell -ExecutionPolicy Bypass -File scripts\doctor.ps1` does not cover it; use `cd backend` then `..\.venv\Scripts\python.exe -m nexus.cli ocr-test`, or **Models & learning > OCR > Test OCR**. Expected: "[OK] OCR works" and the recognised text "NEXUS OCR TEST 4417".
+
+| Symptom | Cause / fix |
+|---|---|
+| `ocr-test` / the OCR card says "the OCR engine is not installed" | `setup.ps1` could not install it. Run `.\.venv\Scripts\python.exe -m pip install -r backend\requirements-ocr.txt`, look at the first red error (needs a 64-bit Python 3.10-3.13; antivirus or a proxy can block the download), then restart NEXUS and press *Test OCR*. |
+| "the OCR engine failed to start" (DLL / onnxruntime error) | Missing Microsoft Visual C++ runtime: install "Microsoft Visual C++ Redistributable (x64)" from Microsoft, restart. |
+| Files rejected with "OCR is turned off" | *Settings > Ingestion & storage > OCR mode* is `off`; set `auto`. |
+| Scanned PDF rejected: "N page(s) have no text layer and could not be read by OCR ... OCR found no text" | The pages really contain no readable text (photos, drawings, very faint or tiny print). Try a better scan (>= 200 dpi, straight, high contrast) or raise *OCR resolution* to 300. |
+| OCR'd text is garbled / the report says "OCR segments with low confidence" | Poor scan, handwriting, unusual fonts, multiple columns or tables. The engine reads printed English/Chinese text well, handwriting and complex layouts badly. Rescan, or type the key facts as a memory. Low-confidence pages are still indexed but flagged - check them before relying on them. |
+| Picture text inside a PDF/Word file is missing | Pictures smaller than *Ignore embedded pictures smaller than* (default 120 px) are skipped on purpose (icons, logos); each picture is read once per document; at most 6 pictures per page are read; text below the confidence threshold is dropped. Mode must be `auto` (not `scanned_only`). Adjust under Settings. |
+| Ingesting a big scan takes a long time | OCR costs roughly 1-3 seconds per page on a normal CPU (a 128-page scan takes several minutes). It runs one page at a time even with several workers. Pause/Resume works at any time. |
+| Languages | The bundled models cover English (Latin script) and Chinese. Other scripts are not supported by this engine. |
+| Reading order is wrong on multi-column pages | Text is ordered row by row, left to right; columns can interleave. The facts are still searchable, but quotes may mix columns. |
+
 ## Retrieval / knowledge
 
 | Symptom | Fix |
@@ -72,8 +90,6 @@ netstat -ano | findstr :8000                                              # is s
 | Search finds nothing | Check *Knowledge > Collections* shows chunks > 0. Unrelated text is intentionally not returned. Try different words (the built-in embedder is lexical). |
 | Collection shows **needs re-index** | The embedding model changed. Press *Re-index*. Until then only keyword search works. |
 | Answers ignore my documents | Make sure *Use my knowledge* is ticked and the right collection is selected; look at the sources panel under the answer. |
-| PDF upload: everything rejected as "low-information" / job paused by the quality gate / "N page(s) are scanned images" | The PDF is a **scan** (pages are pictures with no text layer); only stray page numbers/footers can be read, and **OCR is not built into NEXUS**. Check: open the PDF in a viewer and try to select/copy a sentence - if you cannot, it is a scan. Fix: run OCR first, then upload the OCR'd copy. Options: Adobe Acrobat *Scan & OCR > Recognize Text*; or free `ocrmypdf` (`pip install ocrmypdf`, plus the Tesseract OCR and Ghostscript installers for Windows) then `ocrmypdf scan.pdf scan_ocr.pdf`; or export the text yourself to a `.txt`/`.docx` and upload that. Diagnostic from the `backend` folder: `..\.venv\Scripts\python.exe -c "import pymupdf; d=pymupdf.open(r'C:\path\file.pdf'); print(len(d), 'pages'); [print(i+1, 'text chars:', len(p.get_text()), 'images:', len(p.get_images())) for i, p in enumerate(d) if i < 8]"` - near-zero text chars with images >= 1 on every page confirms a scan. |
-| PDF shows "page has no extractable text" | The PDF is a scan. OCR is not built in; run OCR first (e.g. in Acrobat/ocrmypdf). |
 | Ingestion job **paused: Quality gate** | Too many rejected/quarantined chunks. Open *Rejected records*, fix the filter or the source, then Resume (or "Resume anyway"). |
 | Job **paused: Embedding model unavailable** | LM Studio stopped or the embedding model is not loaded. Fix it and Resume - the checkpoint is kept. |
 | Job **interrupted** after a crash/restart/closed window | Open the job and press **Resume**; it continues from the last committed batch (no duplicates are created; this was tested with a simulated hard crash). Items that show *failed* (e.g. a file was locked) are retried with the **Retry N failed** button. If you cannot find the job, *Data ingestion > Jobs*. |

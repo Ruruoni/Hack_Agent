@@ -146,6 +146,16 @@ def register(app: FastAPI, ctx) -> None:
         out["collections_needing_reindex"] = [c["name"] for c in ctx.kb.list_collections() if c.get("needs_reindex")]
         return out
 
+    # ---------------------------------------------------------------- OCR
+    @app.get("/api/ocr/status")
+    def ocr_status():
+        return ctx.ingestion.ocr.status()
+
+    @app.post("/api/ocr/test")
+    def ocr_test():
+        ctx.ingestion.ocr.reset()          # pick up a package installed since the last check
+        return {**ctx.ingestion.ocr.status(), **ctx.ingestion.ocr.self_test()}
+
     # ---------------------------------------------------------------- backup
     @app.post("/api/backup")
     def backup():

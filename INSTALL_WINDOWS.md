@@ -85,7 +85,7 @@ PowerShell blocks scripts by default, so we start the script with an explicit pe
 powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
 ```
 
-What it does (six numbered steps): finds Python (3.10+, preferring 3.12), creates a private environment in `.venv\`, installs the Python packages, copies `.env.example` to `.env`, installs and builds the web interface (needs Node.js), and creates the database in `data\`. It is safe to re-run; existing `.venv`, `.env` and `data\` are kept.
+What it does (six numbered steps): finds Python (3.10-3.13, preferring 3.12), creates a private environment in `.venv\`, installs the Python packages, installs the **OCR engine** (reads scanned PDFs and images; non-fatal if it fails) and prints an OCR self-test, copies `.env.example` to `.env`, installs and builds the web interface (needs Node.js), and creates the database in `data\`. It is safe to re-run; existing `.venv`, `.env` and `data\` are kept.
 
 * It takes 3-10 minutes. Red text from `pip` about *"dependency resolver"* warnings is usually harmless; a final green **"Setup finished."** line means success. A yellow **"Setup finished WITHOUT the web UI"** means Node.js/npm needs fixing (the API works, the browser UI does not).
 * If the optional ChromaDB package fails to install you will see a yellow message. That is fine: NEXUS automatically uses its built-in SQLite vector store.

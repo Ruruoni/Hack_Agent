@@ -127,6 +127,24 @@ def ingest_path(ctx: ToolContext, a: dict) -> dict:
     return ok(job=job["id"], status=j["status"], counts=j["counts"])
 
 
+def ocr_extract(ctx: ToolContext, a: dict) -> dict:
+    """Read text from a PDF (scanned or mixed), image or DOCX with the same reader the ingestion pipeline uses. Nothing is stored."""
+    from ...ingestion import parsers
+    p = _perm(ctx).resolve(a["path"])
+    kind = parsers.detect_kind(p)
+    if kind not in ("pdf", "image", "docx"):
+        return fail(f"ocr_extract handles PDF, images and DOCX (this file is '{kind}'); use fs_read for text files")
+    rejects: list[str] = []
+    out, used, limit = [], 0, min(int(a.get("max_chars", 8000)), 60000)
+    for seg in parsers.iter_segments(p, kind, lambda i, r, smp: rejects.append(f"{i}: {r}"), parsers.Profile(), ocr=ctx.app.ingestion.ocr):
+        out.append(f"[{seg.locator}]\n{seg.text}")
+        used += len(seg.text)
+        if used >= limit:
+            break
+    text, trunc = truncate("\n\n".join(out), limit)
+    return ok(path=str(p), kind=kind, text=text, truncated=trunc or used >= limit, notes=rejects[:20])
+
+
 def register(reg: ToolRegistry) -> None:
     S = lambda **p: {"type": "object", "properties": p, "additionalProperties": False}  # noqa: E731
     reg.register(Tool("fs_list", "List files in an allowed folder (default: the agent workspace).",
@@ -154,3 +172,6 @@ def register(reg: ToolRegistry) -> None:
     reg.register(Tool("ingest_path", "Ingest a file or folder from an allowed location into a knowledge collection.",
                       {**S(path={"type": "string"}, collection={"type": "string"}, name={"type": "string"}), "required": ["path"]},
                       ingest_path, effects={INGEST, WRITE}, risk="medium", timeout=1800))
+    reg.register(Tool("ocr_extract", "Read the text of a PDF (including scanned pages and text inside pictures), image (png/jpg/tiff...) or DOCX without storing it.",
+                      {**S(path={"type": "string"}, max_chars={"type": "integer"}), "required": ["path"]}, ocr_extract,
+                      untrusted_output=True, timeout=600, dependencies=["PIL"]))

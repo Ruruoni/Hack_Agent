@@ -39,6 +39,25 @@ Allow 20-30 minutes. Fill in the result sheet at the end.
 (CLI equivalent, with NEXUS **stopped** - see the warning in section G:
 `cd backend` then `..\.venv\Scripts\python.exe -m nexus.cli ingest ..\samples\sample_manual.pdf ..\samples\tickets.csv --collection acceptance --name acceptance-test`.)
 
+## A2. OCR: a scanned PDF and an image (no internet needed)
+
+Uses `samples\sample_scan.pdf` (2 pages that are **pictures of text**, no text layer) and `samples\sample_note.png`. Use a **separate collection** so the counts in the other parts stay as stated.
+
+1. First check the engine: `cd backend` then `..\.venv\Scripts\python.exe -m nexus.cli ocr-test` (or *Models & learning > OCR > Test OCR*) -> `[OK] OCR works` and the text `NEXUS OCR TEST 4417`.
+2. **Data ingestion > New job**: paste the two full paths (`(Resolve-Path samples\sample_scan.pdf).Path`, same for `sample_note.png`), collection `acceptance-ocr`, **Start**.
+
+**Expected (measured on Linux with these exact files):**
+
+| Item | Expected |
+|---|---|
+| Job status | `completed`, 2 items, **3 chunks indexed**, 0 rejected |
+| *Report* tab | "Scanned pages read by OCR: **2**", "Pictures/images read by OCR: **1**" |
+| Search `When is the Orion maintenance window?` | `sample_scan.pdf`, locator **`page 1 (OCR)`**, text "Orion maintenance window / is every second Tuesday at 22:00" |
+| Search `What is the approval code for change requests?` | `sample_scan.pdf`, **`page 2 (OCR)`**, contains **5521** |
+| Search `Where is the backup vault key?` | `sample_note.png`, locator `image`, "in the safe in room 12" |
+
+OCR wording can differ slightly with other fonts/scans; the numbers 22:00 and 5521 should be exact. **YOUR RESULT:** ______
+
 ## B. Ingest a public web page (needs internet)
 
 1. **Data ingestion > New job**, source `https://example.com`, collection `acceptance`, **Start**.
@@ -113,6 +132,7 @@ After the test passes with the lexical embedder, follow [LM_STUDIO_GUIDE.md](../
 | Step | Expected | YOUR RESULT (pass/fail + note) |
 |---|---|---|
 | A. PDF+CSV job | completed, 26 chunks, 1 rejected | |
+| A2. OCR sample scan + image | 3 chunks, 2 OCR pages, 1 image; 22:00 and 5521 found | |
 | B. Web page | completed, URL preserved | |
 | C. Searches | 4 expected first hits | |
 | D. Grounded chat | correct answers + sources; 3rd says "not in sources" | |

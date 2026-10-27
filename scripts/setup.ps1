@@ -56,6 +56,9 @@ Write-Host "== 3/6 Installing Python packages (a few minutes)" -ForegroundColor 
 if ($LASTEXITCODE -ne 0) { Fail "Package installation failed (scroll up for the first red error). See docs\TROUBLESHOOTING.md > Installation." }
 & $venvPy -m pip install --disable-pip-version-check -r backend\requirements-optional.txt
 if ($LASTEXITCODE -ne 0) { Write-Host "Optional packages (ChromaDB) could not be installed - NEXUS will use its built-in SQLite vector store. That is fine." -ForegroundColor Yellow }
+Write-Host "Installing the OCR engine (reads scanned PDFs and images)..." -ForegroundColor Cyan
+& $venvPy -m pip install --disable-pip-version-check -r backend\requirements-ocr.txt
+if ($LASTEXITCODE -ne 0) { Write-Host "The OCR engine could not be installed. NEXUS still works, but scanned PDFs and images cannot be read until it is (see docs\TROUBLESHOOTING.md > PDFs and OCR)." -ForegroundColor Yellow }
 if ($WithTraining) {
     Write-Host "Installing optional fine-tuning libraries..." -ForegroundColor Cyan
     & $venvPy -m pip install --disable-pip-version-check -r backend\requirements-training.txt
@@ -102,6 +105,9 @@ Push-Location backend
 $dbExit = $LASTEXITCODE
 Pop-Location
 if ($dbExit -ne 0) { Fail "Database initialisation failed. See docs\TROUBLESHOOTING.md" }
+Push-Location backend
+& $venvPy -m nexus.cli ocr-test
+Pop-Location   # (informational: a failure here does not stop setup)
 
 Write-Host ""
 if ($webOk) { Write-Host "Setup finished." -ForegroundColor Green } else { Write-Host "Setup finished WITHOUT the web UI (see the yellow messages)." -ForegroundColor Yellow }

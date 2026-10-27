@@ -11,7 +11,8 @@ PY="${PYTHON:-python3}"
 python -m pip install --upgrade pip >/dev/null
 pip install -r backend/requirements-dev.txt
 pip install -r backend/requirements-optional.txt || echo "(optional packages skipped - NEXUS will use its built-in fallbacks)"
+pip install -r backend/requirements-ocr.txt || echo "(OCR engine not installed - scanned PDFs/images will be reported as unreadable)"
 [ -f .env ] || cp .env.example .env
 if command -v npm >/dev/null; then (cd frontend && npm install --no-audit --no-fund && npm run build); else echo "Node.js/npm not found: the web UI will not be built (API still works)."; fi
-(cd backend && python -m nexus.cli init-db)
+(cd backend && python -m nexus.cli init-db && (python -m nexus.cli ocr-test || true))
 echo "Setup finished. Start with: scripts/start.sh"

@@ -98,6 +98,12 @@ class Settings:
     archive_max_ratio: int = 200             # zip-bomb guard (uncompressed / compressed)
     archive_max_total_mb: int = 4096
     keep_raw: bool = True
+    # --- OCR (text in scans, images and pictures inside documents) ---
+    ocr_mode: str = "auto"                   # auto = scanned pages + pictures inside documents | scanned_only | off
+    ocr_dpi: int = 200                       # resolution scanned PDF pages are rendered at
+    ocr_min_image_px: int = 120              # ignore embedded pictures smaller than this (icons, bullets)
+    ocr_max_images_per_page: int = 6
+    ocr_min_confidence: float = 0.5          # picture text below this is dropped; scanned pages below it are flagged
     # --- web research ---------------------------------------------------------------------
     web_allowlist: list[str] = field(default_factory=list)   # empty = any public host
     web_denylist: list[str] = field(default_factory=lambda: ["localhost"])
@@ -209,6 +215,8 @@ def save_overrides(s: Settings, changes: dict[str, Any]) -> list[str]:
                 raise ValueError(f"Unknown setting: {k}")
             if k == "execution_mode" and v not in EXECUTION_MODES:
                 raise ValueError(f"execution_mode must be one of {EXECUTION_MODES}")
+            if k == "ocr_mode" and v not in ("auto", "scanned_only", "off"):
+                raise ValueError("ocr_mode must be auto, scanned_only or off")
             if k in ("tool_mode",) and v not in ("auto", "native", "prompt"):
                 raise ValueError("tool_mode must be auto, native or prompt")
             if v == "***set***":  # UI echoing a masked secret back

@@ -26,6 +26,8 @@ CODE_EXT = {".py", ".js", ".ts", ".tsx", ".jsx", ".java", ".c", ".h", ".cpp", ".
             ".sh", ".ps1", ".bat", ".sql", ".kt", ".swift", ".lua", ".r", ".scala", ".css", ".vue"}
 CONFIG_EXT = {".ini", ".cfg", ".conf", ".toml", ".yaml", ".yml", ".env", ".properties", ".config"}
 ARCHIVE_EXT = {".zip", ".tar", ".gz", ".tgz", ".bz2", ".xz"}
+IMAGE_EXT = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".gif", ".webp"}
+OCR_AWARE = {"pdf", "docx", "image"}
 KINDS = {".pdf": "pdf", ".docx": "docx", ".csv": "csv", ".tsv": "csv", ".json": "json", ".jsonl": "jsonl",
          ".ndjson": "jsonl", ".xlsx": "xlsx", ".xlsm": "xlsx", ".xml": "xml", ".parquet": "parquet"}
 for _e in TEXT_EXT | MD_EXT:
@@ -40,6 +42,8 @@ for _e in CONFIG_EXT:
     KINDS[_e] = "config"
 for _e in ARCHIVE_EXT:
     KINDS[_e] = "archive"
+for _e in IMAGE_EXT:
+    KINDS[_e] = "image"
 
 TABULAR = {"csv", "jsonl", "json", "xlsx", "parquet", "xml"}
 
@@ -145,6 +149,13 @@ def validate_file(path: Path, kind: str, max_bytes: int) -> tuple[bool, str]:
         return False, f"corrupt: not a valid {kind} (zip) container"
     if kind == "parquet" and head[:4] != b"PAR1":
         return False, "corrupt: missing PAR1 magic"
+    if kind == "image":
+        try:
+            from PIL import Image
+            with Image.open(path) as im:
+                im.verify()
+        except Exception as e:  # noqa: BLE001
+            return False, f"corrupt or unreadable image: {e}"
     if kind == "unsupported":
         return False, "unsupported format (binary data)"
     return True, ""
@@ -219,12 +230,47 @@ def parse_text(path: Path, kind: str, reject: RejectFn, profile: Profile, seg_ch
         reject(0, f"encoding problems: {bad} line(s) contained undecodable bytes (replaced with U+FFFD)", "")
 
 
-def parse_pdf(path: Path, kind: str, reject: RejectFn, profile: Profile) -> Iterator[Segment]:
+# ---- OCR helpers ---------------------------------------------------------------------------------
+UNSUPPORTED_IMG_TYPES = {"image/x-emf", "image/emf", "image/x-wmf", "image/wmf"}
+
+
+def to_png(blob: bytes, max_side: int = 3500) -> tuple[bytes, int, int]:
+    """Decode any Pillow-readable image (first frame), flatten transparency, cap its size, return PNG bytes + original size."""
+    import io
+
+    from PIL import Image
+    with Image.open(io.BytesIO(blob)) as im:
+        im.load()
+        w, h = im.size
+        if im.mode in ("RGBA", "LA", "P"):
+            im = im.convert("RGBA")
+            bg = Image.new("RGB", im.size, "white")
+            bg.paste(im, mask=im.split()[-1])
+            im = bg
+        else:
+            im = im.convert("RGB")
+        if max(im.size) > max_side:
+            k = max_side / max(im.size)
+            im = im.resize((max(1, int(im.size[0] * k)), max(1, int(im.size[1] * k))))
+        out = io.BytesIO()
+        im.save(out, "PNG")
+        return out.getvalue(), w, h
+
+
+def _ocr_why(ocr: Any) -> str:
+    return ocr.unavailable_reason() if ocr is not None else "OCR is not available in this context"
+
+
+def parse_pdf(path: Path, kind: str, reject: RejectFn, profile: Profile, ocr: Any = None) -> Iterator[Segment]:
+    """Text layer first. Pages WITHOUT a text layer (scans) are rendered and OCR'd; pages WITH text that also contain sizeable
+    embedded pictures (screenshots, diagrams, scanned inserts) get the picture text appended. Both are marked in the locator."""
     import pymupdf as fitz  # PyMuPDF
+    from .ocr import OcrUnavailable
     try:
         doc = fitz.open(str(path))
     except Exception as e:  # noqa: BLE001
         raise ParseError(f"cannot open PDF: {e}") from e
+    seen_images: set[int] = set()          # logos/watermarks repeated on every page are read once
     try:
         if doc.needs_pass:
             raise ParseError("PDF is password-protected")
@@ -235,18 +281,74 @@ def parse_pdf(path: Path, kind: str, reject: RejectFn, profile: Profile) -> Iter
                 reject(i, f"page extraction error: {e}", "")
                 continue
             stripped = text.strip()
-            if len(stripped) < 20:       # a scan typically leaves only a page number / footer behind
-                if page.get_images():
-                    reject(i, "scanned page: it is an image with no text layer (OCR is not built in)", stripped[:50])
-                else:
-                    reject(i, "page has almost no text", stripped[:50])
-                continue
-            yield Segment(text, f"page {i}", {"page": i})
+            meta: dict[str, Any] = {"page": i}
+            locator = f"page {i}"
+            if len(stripped) < 20:                                   # no usable text layer: a scan, or vector-drawn text
+                try:
+                    has_content = bool(page.get_images()) or bool(page.get_drawings())
+                except Exception:  # noqa: BLE001
+                    has_content = True
+                if not has_content:
+                    reject(i, "page has almost no text (blank page?)", stripped[:50])
+                    continue
+                why = _ocr_why(ocr)
+                if why:
+                    reject(i, f"scanned page: no text layer and it cannot be read ({why})", stripped[:50])
+                    continue
+                try:
+                    longest = max(page.rect.width, page.rect.height) or 842
+                    dpi = max(72, min(ocr.dpi, int(3500 / (longest / 72))))
+                    res = ocr.ocr_image(page.get_pixmap(dpi=dpi).tobytes("png"))
+                except OcrUnavailable as e:
+                    reject(i, f"scanned page: no text layer and it cannot be read ({e})", "")
+                    continue
+                except Exception as e:  # noqa: BLE001
+                    reject(i, f"OCR failed on this page: {e.__class__.__name__}: {e}", "")
+                    continue
+                if len(res.text.strip()) < 5:
+                    reject(i, "scanned page: OCR found no text (a picture without text, or a blank scan)", "")
+                    continue
+                text = (stripped + "\n" + res.text).strip()
+                locator = f"page {i} (OCR)"
+                meta.update(ocr="page", ocr_page=1, ocr_confidence=res.confidence)
+                if res.confidence is not None and res.confidence < ocr.min_confidence:
+                    meta["low_confidence"] = True
+            elif ocr is not None and ocr.mode == "auto" and ocr.max_images_per_page and ocr.available():
+                found: list[str] = []
+                tried = 0
+                try:
+                    images = page.get_images(full=True)
+                except Exception:  # noqa: BLE001
+                    images = []
+                for img in images:
+                    xref = img[0]
+                    if xref in seen_images or min(img[2], img[3]) < ocr.min_image_px:
+                        continue
+                    seen_images.add(xref)
+                    if tried >= ocr.max_images_per_page:
+                        break
+                    tried += 1
+                    try:
+                        pix = fitz.Pixmap(doc, xref)
+                        if pix.colorspace is None or pix.n - pix.alpha >= 4:
+                            pix = fitz.Pixmap(fitz.csRGB, pix)
+                        if pix.alpha:
+                            pix = fitz.Pixmap(pix, 0)
+                        res = ocr.ocr_image(pix.tobytes("png"))
+                    except Exception:  # noqa: BLE001 - one unreadable picture must not lose the page
+                        continue
+                    if len(res.text.strip()) >= 8 and (res.confidence or 0) >= ocr.min_confidence:
+                        found.append(res.text)
+                if found:
+                    text = text + "".join(f"\n\n[Text found in picture {k}]\n{t}" for k, t in enumerate(found, 1))
+                    locator = f"page {i} (+picture text)"
+                    meta.update(ocr="images", ocr_images=len(found))
+            yield Segment(text, locator, meta)
     finally:
         doc.close()
 
 
-def parse_docx(path: Path, kind: str, reject: RejectFn, profile: Profile, seg_chars: int = 3000) -> Iterator[Segment]:
+def parse_docx(path: Path, kind: str, reject: RejectFn, profile: Profile, seg_chars: int = 3000, ocr: Any = None) -> Iterator[Segment]:
     import docx
     try:
         d = docx.Document(str(path))
@@ -273,6 +375,54 @@ def parse_docx(path: Path, kind: str, reject: RejectFn, profile: Profile, seg_ch
             buf, size, part = [], 0, part + 1
     if buf:
         yield Segment("\n".join(buf), f"part {part}")
+    if ocr is not None and ocr.mode == "auto" and ocr.available():      # pictures embedded in the document (screenshots, scanned inserts)
+        n = 0
+        for rel in d.part.package.iter_parts():
+            ct = getattr(rel, "content_type", "")
+            if not ct.startswith("image/") or ct in UNSUPPORTED_IMG_TYPES or n >= 40:
+                continue
+            try:
+                png, w, h = to_png(rel.blob)
+                if min(w, h) < ocr.min_image_px:
+                    continue
+                res = ocr.ocr_image(png)
+            except Exception:  # noqa: BLE001
+                continue
+            if len(res.text.strip()) >= 8 and (res.confidence or 0) >= ocr.min_confidence:
+                n += 1
+                yield Segment(f"[Text found in embedded picture {n}]\n{res.text}", f"embedded picture {n} (OCR)",
+                              {"ocr": "images", "ocr_images": 1, "ocr_confidence": res.confidence})
+
+
+def parse_image(path: Path, kind: str, reject: RejectFn, profile: Profile, ocr: Any = None) -> Iterator[Segment]:
+    """Standalone images (screenshots, photos of documents, multi-page TIFFs): the text in them, via OCR."""
+    why = _ocr_why(ocr)
+    if why:
+        raise ParseError(f"image files need OCR, which cannot run: {why}")
+    from PIL import Image
+    try:
+        im = Image.open(str(path))
+    except Exception as e:  # noqa: BLE001
+        raise ParseError(f"cannot open image: {e}") from e
+    frames = min(int(getattr(im, "n_frames", 1)), 200)
+    for n in range(frames):
+        try:
+            im.seek(n)
+            import io
+            buf = io.BytesIO()
+            im.save(buf, "PNG")
+            png, w, h = to_png(buf.getvalue())
+            res = ocr.ocr_image(png)
+        except Exception as e:  # noqa: BLE001
+            reject(n + 1, f"OCR failed on this image/frame: {e.__class__.__name__}: {e}", "")
+            continue
+        if len(res.text.strip()) < 3:
+            reject(n + 1, "no text found in the image (a photo or diagram without text?)", "")
+            continue
+        meta: dict[str, Any] = {"ocr": "image", "ocr_images": 1, "ocr_confidence": res.confidence, "size": f"{w}x{h}"}
+        if res.confidence is not None and res.confidence < ocr.min_confidence:
+            meta["low_confidence"] = True
+        yield Segment(res.text, "image" if frames == 1 else f"frame {n + 1}", meta)
 
 
 def parse_html(path: Path, kind: str, reject: RejectFn, profile: Profile) -> Iterator[Segment]:
@@ -483,14 +633,16 @@ def parse_parquet(path: Path, kind: str, reject: RejectFn, profile: Profile, row
 PARSERS: dict[str, Callable[..., Iterator[Segment]]] = {
     "text": parse_text, "log": parse_text, "code": parse_text, "config": parse_text,
     "pdf": parse_pdf, "docx": parse_docx, "html": parse_html, "csv": parse_csv, "jsonl": parse_jsonl,
-    "json": parse_json, "xlsx": parse_xlsx, "xml": parse_xml, "parquet": parse_parquet,
+    "json": parse_json, "image": parse_image, "xlsx": parse_xlsx, "xml": parse_xml, "parquet": parse_parquet,
 }
 
 
-def iter_segments(path: Path, kind: str, reject: RejectFn, profile: Profile) -> Iterator[Segment]:
+def iter_segments(path: Path, kind: str, reject: RejectFn, profile: Profile, ocr: Any = None) -> Iterator[Segment]:
     fn = PARSERS.get(kind)
     if fn is None:
         raise ParseError(f"no parser for kind '{kind}'")
+    if kind in OCR_AWARE:
+        return fn(path, kind, reject, profile, ocr=ocr)
     return fn(path, kind, reject, profile)
 
 

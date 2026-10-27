@@ -20,6 +20,7 @@ Open **PowerShell** (not as administrator):
 - [ ] `git checkout claude/epic-faraday-mbnov9` (this is also the repository's default branch)
 - [ ] `git log -1 --format="%H %s"` - compare the hash with the one given in the handover message.
 - [ ] `powershell -ExecutionPolicy Bypass -File scripts\setup.ps1` - ends with **Setup finished.** (a yellow "WITHOUT the web UI" means Node/npm needs fixing).
+- [ ] The end of setup printed `[OK] OCR works` (if not: `docs/TROUBLESHOOTING.md` > PDFs, images and OCR; everything else still works).
 - [ ] Optional: open `.env` in Notepad and review it (defaults work). Nothing secret is required.
 
 ## Part 3 - LM Studio (once, then each session)

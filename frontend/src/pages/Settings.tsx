@@ -24,6 +24,9 @@ const SECTIONS: { id: string; title: string; intro?: string; fields: Def[] }[] =
     { key: "max_file_mb", label: "Max file size (MB)", type: "num" }, { key: "chunk_chars", label: "Chunk size (chars)", type: "num" }, { key: "chunk_overlap", label: "Chunk overlap", type: "num" }, { key: "ingest_batch_size", label: "Chunks per checkpoint", type: "num" },
     { key: "ingest_workers", label: "Parallel workers", type: "num" }, { key: "max_reject_rate", label: "Quality gate: pause above this reject share", type: "num" }, { key: "min_free_disk_mb", label: "Keep this much disk free (MB)", type: "num" },
     { key: "quarantine_injections", label: "Quarantine text that looks like AI instructions", type: "bool" }, { key: "keep_raw", label: "Keep a copy of raw inputs", type: "bool" }, { key: "vector_backend", label: "Vector store (restart to apply)", type: { select: ["auto", "chroma", "sqlite"] } },
+    { key: "ocr_mode", label: "OCR mode", type: { select: ["auto", "scanned_only", "off"] }, hint: "auto: scanned pages + pictures inside documents. scanned_only: only pages with no text layer. off: never OCR." },
+    { key: "ocr_dpi", label: "OCR resolution for scanned pages (dpi)", type: "num" }, { key: "ocr_min_image_px", label: "Ignore embedded pictures smaller than (px)", type: "num" },
+    { key: "ocr_max_images_per_page", label: "Max pictures read per page", type: "num" }, { key: "ocr_min_confidence", label: "OCR minimum confidence (0-1)", type: "num" },
     { key: "max_auto_download_mb", label: "Dataset downloads above this need explicit approval (MB)", type: "num" } ] },
   { id: "web", title: "Web research & search", fields: [
     { key: "web_allowlist", label: "Domain allow-list (empty = any public host)", type: "list" }, { key: "web_denylist", label: "Domain deny-list", type: "list" }, { key: "web_respect_robots", label: "Respect robots.txt", type: "bool" },

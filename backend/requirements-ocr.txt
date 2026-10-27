@@ -1,0 +1,5 @@
+# OCR: reads text from scanned PDFs, photos/screenshots and pictures inside documents.
+# Pure pip install: the recognition models are bundled in the wheel (no downloads, no separate Tesseract installer). CPU only.
+# Installed by scripts\setup.ps1 / setup.sh (a failure here is non-fatal: NEXUS still works, scans are just reported as unreadable).
+rapidocr-onnxruntime>=1.2.3
+pillow>=10.1

@@ -6,7 +6,7 @@ How to get data into NEXUS: local files, public URLs, and Hugging Face datasets 
 
 ## 1. Supported inputs
 
-PDF, DOCX, TXT, Markdown, HTML, CSV/TSV, JSON, JSONL/NDJSON, XLSX, XML, **Parquet**, source code, config files (ini/toml/yaml/env...), log files, and ZIP/TAR/GZ **archives** of those (members are extracted into a safe workspace with zip-slip and zip-bomb protection). Public URLs are fetched and text-extracted. Other formats: add a parser in `backend/nexus/ingestion/parsers.py` (`PARSERS` registry).
+PDF (text-based, **scanned, or mixed**), **images (PNG, JPG, TIFF incl. multi-page, BMP, GIF, WEBP)**, DOCX (including pictures inside it), TXT, Markdown, HTML, CSV/TSV, JSON, JSONL/NDJSON, XLSX, XML, **Parquet**, source code, config files (ini/toml/yaml/env...), log files, and ZIP/TAR/GZ **archives** of those (members are extracted into a safe workspace with zip-slip and zip-bomb protection). Public URLs are fetched and text-extracted. Other formats: add a parser in `backend/nexus/ingestion/parsers.py` (`PARSERS` registry).
 
 Large files are **streamed**: PDFs page by page, CSV/JSONL/Parquet in batches, JSON arrays incrementally, XLSX in read-only mode. A top-level JSON *object* over 50 MB cannot be streamed - convert it to JSONL.
 
@@ -68,7 +68,7 @@ Training data is a **separate** pipeline (*Models & learning > Fine-tuning*): JS
 ## 6. Tips
 
 * One topic per collection (e.g. `networking-docs`, `ticket-history`) makes retrieval cleaner and deletion easy.
-* Prefer text-based PDFs. Scanned PDFs have no extractable text (reported per page); OCR is not built in.
+* Scanned PDFs and images are read with the built-in OCR (about 1-3 s per page, CPU). Clean, straight, 200+ dpi printed text works best; handwriting and complex layouts do not. Low-confidence OCR pages are flagged in the report. Details: docs/TROUBLESHOOTING.md > PDFs, images and OCR.
 * After changing the embedding model, press **Re-index** on each collection.
 * To delete a dataset's knowledge: *Knowledge > Collections > Delete*. The raw originals in `data\raw\` / `data\downloads\` are kept until you delete them yourself.
 

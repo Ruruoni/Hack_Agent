@@ -32,7 +32,7 @@ Linux/macOS: `scripts/setup.sh`, `scripts/start.sh`, `scripts/stop.sh`.
 |---|---|
 | **Chat** | Streaming multi-turn chat, persistent history, titles, rolling summaries, reference resolution ("that document"), personality / length / beginner-vs-technical modes, clarifying questions, honest-uncertainty prompt rules, numbered **source citations**, file upload, thumbs and corrections, stop button, agent mode with live task progress and inline approvals. |
 | **LM Studio** | Connection test, model discovery (rich `/api/v0/models` with fallback), selection, load/unload where supported, streaming, context budget, inference parameters, capability detection (native tools vs JSON-action fallback, vision, context), clear errors, provider adapter interface. |
-| **Ingestion** | PDF, DOCX, TXT, MD, HTML, CSV/TSV, JSON/JSONL, XLSX, XML, Parquet, code, configs, logs, archives, URLs. Streaming, bounded workers, chunked transactional writes, **checkpoints, pause/resume/retry/cancel**, crash recovery, disk checks, exact + near-duplicate detection, quality filters, **quarantine** for injection-like text, quality gate, structured profiles, per-item processing records, batch reports with retrieval self-check. |
+| **Ingestion** | PDF (text, scanned and mixed), **images** (PNG/JPG/TIFF/BMP/GIF/WEBP) and pictures inside PDFs/DOCX via **built-in OCR** (RapidOCR, CPU, no extra installer), DOCX, TXT, MD, HTML, CSV/TSV, JSON/JSONL, XLSX, XML, Parquet, code, configs, logs, archives, URLs. Streaming, bounded workers, chunked transactional writes, **checkpoints, pause/resume/retry/cancel**, crash recovery, disk checks, exact + near-duplicate detection, quality filters, **quarantine** for injection-like text, quality gate, structured profiles, per-item processing records, batch reports with retrieval self-check. |
 | **Datasets** | Hugging Face / URL / local: inspect, licence & access info, size and disk checks, explicit approval for big downloads, resumable verified downloads, schema preview, import. GUI and CLI. |
 | **Memory** | SQLite + vector index. Working, episodic, semantic, procedural, preference and project memory with trust levels, confidence, timestamps, provenance; search, edit, verify, mark outdated, delete, export, re-index. |
 | **Agent** | Bounded orchestrator (plan, one action at a time, retries, limits, checkpoints, resume, cancel, global STOP), intended/attempted/verified tracking, 27 tools (files, knowledge, memory, CSV/JSON/data analysis, code/config/log/pcap analysis, web search/fetch/scrape/research, sandboxed Python, registered commands, read-only SQL, reports, diagnostics, API integrations), extension proposals for missing capabilities. |
@@ -71,13 +71,13 @@ data/            created at run time (database, vectors, raw inputs, reports, lo
 powershell -ExecutionPolicy Bypass -File scripts\run-tests.ps1
 ```
 
-See **[docs/TEST_REPORT.md](docs/TEST_REPORT.md)** for what was verified, how, and - just as important - what was **not** run. In short: the backend suite (103 tests) and frontend suite (11) pass in the build environment, including a real CPU LoRA run on a tiny locally-built model, but no real LM Studio, no Windows host and no internet access to Hugging Face / public sites were available there.
+See **[docs/TEST_REPORT.md](docs/TEST_REPORT.md)** for what was verified, how, and - just as important - what was **not** run. In short: the backend suite (116 tests) and frontend suite (11) pass in the build environment, including a real CPU LoRA run on a tiny locally-built model, but no real LM Studio, no Windows host and no internet access to Hugging Face / public sites were available there.
 
 ## Honest limitations and deferred work
 
 * Tested against a protocol-level mock of LM Studio, not a real one (see test report). Real-model answer quality is unmeasured.
 * The built-in embedder is **lexical**; for semantic search load an embedding model in LM Studio (or install sentence-transformers) and re-index.
-* No OCR for scanned PDFs; no image/vision input; JavaScript page rendering needs optional Playwright (code path present, not exercised in tests).
+* OCR reads printed English/Chinese text; handwriting, tables and multi-column layouts are unreliable, and it was only tested on synthetic scans on Linux (not on Windows, not on real-world scans). There is no vision/image *understanding* (photos without text yield nothing); JavaScript page rendering needs optional Playwright (code path present, not exercised in tests).
 * The Python sandbox is best-effort isolation, not a security boundary. There is no user authentication on the local API.
 * PostgreSQL/pgvector and multi-user deployment are a documented upgrade path, not implemented.
 * QLoRA/GPU training and the GGUF export commands are implemented but could not be run in the build environment (CPU-only LoRA was). Fine-tuning quality on real models is untested.

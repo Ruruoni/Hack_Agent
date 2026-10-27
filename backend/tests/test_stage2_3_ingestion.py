@@ -335,19 +335,19 @@ def test_report_has_retrieval_check_and_files(ctx, tmp_path):
     assert "does **not** change the language model" in rep["markdown"]
 
 
-def test_scanned_image_only_pdf_is_explained_not_reported_as_junk(ctx, tmp_path):
+def test_blank_picture_pdf_is_rejected_with_a_clear_reason(ctx, tmp_path):
+    """Image-only pages that contain NO text (OCR finds nothing) are reported as such - not as generic junk, not a quality-gate pause."""
     import pymupdf
     doc = pymupdf.open()
-    for n in range(1, 6):                                    # 5 "scanned" pages: a picture plus a stray page number
+    for n in range(1, 6):
         pg = doc.new_page()
         pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 40, 40), False)
         pix.clear_with(200)
         pg.insert_image(pymupdf.Rect(50, 50, 500, 700), pixmap=pix)
-        pg.insert_text((300, 800), str(n))
-    p = tmp_path / "scan.pdf"
+    p = tmp_path / "blank_scan.pdf"
     doc.save(str(p))
     job = run(ctx, "scan", [p])
     item = ctx.ingestion.list_items(job["id"])[0]
-    assert item["status"] == "rejected" and "scanned images" in item["reason"] and "OCR" in item["reason"] and "5 page(s)" in item["reason"]
-    assert job["counts"]["chunks_indexed"] == 0 and job["status"] != "paused"          # no misleading quality-gate pause
+    assert item["status"] == "rejected" and "5 page(s)" in item["reason"] and "OCR" in item["reason"]
+    assert job["counts"]["chunks_indexed"] == 0 and job["status"] != "paused"
     assert any(r["reason"].startswith("scanned page") for r in ctx.ingestion.list_rejects(job["id"]))

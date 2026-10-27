@@ -16,7 +16,7 @@ import threading
 import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any, Callable, Iterable
@@ -29,6 +29,7 @@ from ..llm.base import LLMError
 from ..llm.embeddings import Embedder
 from ..system.hardware import check_disk
 from . import parsers
+from .ocr import OcrService
 from .parsers import ParseError, Profile
 from .quality import QualityRules, assess
 
@@ -98,6 +99,7 @@ class IngestionManager:
         self._ctl: dict[str, _Ctl] = {}
         self._threads: dict[str, threading.Thread] = {}
         self._lock = threading.Lock()
+        self.ocr = OcrService(settings)          # shared by all workers; engine loads lazily on first scanned page/image
 
     # ------------------------------------------------------------------ job lifecycle
     def create_job(self, name: str, collection: str, sources: list[str], config: dict | None = None,
@@ -392,7 +394,7 @@ class IngestionManager:
             self.db.update("ingestion_items", item["id"], {"document_id": doc_id})
         rules = QualityRules(min_chars=cfg.min_chunk_chars, quarantine_injections=cfg.quarantine_injections,
                              include_patterns=cfg.include_patterns, exclude_patterns=cfg.exclude_patterns,
-                             structured=kind in parsers.TABULAR)
+                             structured=kind in parsers.TABULAR or kind == "image")
         inc, exc = rules.compiled()
         cursor = int(item["cursor"] or 0)
         profile = Profile()
@@ -404,9 +406,10 @@ class IngestionManager:
                 buf_rejects.append((idx, reason, sample[:300]))
                 if reason.startswith("scanned page"):
                     state["scanned"] += 1
+                    state.setdefault("why", reason)
 
         if kind in parsers.TABULAR and not cfg.tabular_retrieval:
-            for _ in parsers.iter_segments(path, kind, reject, profile):
+            for _ in parsers.iter_segments(path, kind, reject, profile, ocr=self.ocr):
                 self._check(ctl)
             self._save_profile(jid, item, profile)
             counts["records_seen"] = profile.rows
@@ -416,7 +419,7 @@ class IngestionManager:
             self._finish_item(item["id"], "done", "profile only (row indexing disabled)", counts)
             return
 
-        it = iter(parsers.iter_segments(path, kind, reject, profile))
+        it = iter(parsers.iter_segments(path, kind, reject, profile, ocr=self.ocr))
         seg_index = 0
         pending: list[dict] = []
         chunk_idx = int(counts.get("chunk_idx", 0))
@@ -434,6 +437,10 @@ class IngestionManager:
                 continue
             if time.time() - t0 > cfg.max_item_seconds:
                 raise ParseError(f"exceeded max processing time ({cfg.max_item_seconds}s)")
+            counts["ocr_pages"] = counts.get("ocr_pages", 0) + int(seg.meta.get("ocr_page", 0))
+            counts["ocr_images"] = counts.get("ocr_images", 0) + int(seg.meta.get("ocr_images", 0))
+            if seg.meta.get("low_confidence"):
+                counts["ocr_low_confidence"] = counts.get("ocr_low_confidence", 0) + 1
             text = normalize(seg.text)
             for piece in chunk_text(text, cfg.chunk_chars, cfg.chunk_overlap):
                 chunk_idx += 1
@@ -460,8 +467,8 @@ class IngestionManager:
         elif total_indexed == 0 and seg_index == 0:
             status, reason = "rejected", "no extractable content"
             if state["scanned"]:
-                reason = (f"{state['scanned']} page(s) are scanned images with no text layer. OCR is not built in: run OCR on the PDF first "
-                          "(see docs/TROUBLESHOOTING.md > PDFs), then ingest the OCR'd file.")
+                reason = (f"{state['scanned']} page(s) have no text layer and could not be read by OCR. {state['why'].split(': ', 1)[-1]}. "
+                          "See docs/TROUBLESHOOTING.md > PDFs and OCR.")
         elif total_indexed == 0:
             status, reason = "rejected", "all content rejected by quality filters"
         bad = counts.get("chunks_rejected", 0) + counts.get("records_rejected", 0) + counts.get("chunks_quarantined", 0)
@@ -509,10 +516,11 @@ class IngestionManager:
         accepted: list[dict] = []
         quarantined: list[dict] = []
         chunk_rejects: list[tuple[int, str, str]] = []
+        ocr_rules = replace(rules, structured=True)      # short OCR'd pages (slide titles, forms, signs) are legitimate, not junk
         with self.db.conn() as c:
             for ch in pending:
                 text = ch["text"]
-                verdict, why = assess(text, rules, inc, exc)
+                verdict, why = assess(text, ocr_rules if ch["meta"].get("ocr") else rules, inc, exc)
                 if verdict == "reject":
                     st["chunks_rejected"] += 1
                     chunk_rejects.append((ch["idx"], why, text[:200]))
@@ -615,7 +623,7 @@ class IngestionManager:
                     agg[k] += v
         total = sum(status.values())
         out = {k: 0 for k in ("chunks_indexed", "chunks_duplicate", "chunks_near_duplicate", "chunks_rejected",
-                              "chunks_quarantined", "records_seen", "records_rejected")}
+                              "chunks_quarantined", "records_seen", "records_rejected", "ocr_pages", "ocr_images", "ocr_low_confidence")}
         out.update(agg)
         out.update({"items_discovered": total, "items_done": status["done"], "items_duplicate": status["duplicate"],
                     "items_rejected": status["rejected"], "items_quarantined": status["quarantined"],
@@ -687,7 +695,8 @@ class IngestionManager:
         md = [f"# Ingestion report - {j['name']}", f"*Job `{jid}` - status **{j['status']}***", "",
               "## Counts", "", "| Metric | Value |", "|---|---|"]
         for k, label in [("items_discovered", "Items discovered"), ("processed", "Items processed"), ("items_done", "Items indexed OK"),
-                         ("chunks_indexed", "Chunks indexed"), ("duplicated", "Duplicates (chunk + file)"),
+                         ("chunks_indexed", "Chunks indexed"), ("ocr_pages", "Scanned pages read by OCR"), ("ocr_images", "Pictures/images read by OCR"),
+                         ("ocr_low_confidence", "OCR segments with low confidence (check them)"), ("duplicated", "Duplicates (chunk + file)"),
                          ("rejected", "Rejected (records, chunks, files)"), ("quarantined", "Chunks quarantined"),
                          ("failed", "Items failed")]:
             md.append(f"| {label} | {agg.get(k, 0)} |")
