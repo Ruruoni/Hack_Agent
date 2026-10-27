@@ -234,8 +234,12 @@ def parse_pdf(path: Path, kind: str, reject: RejectFn, profile: Profile) -> Iter
             except Exception as e:  # noqa: BLE001
                 reject(i, f"page extraction error: {e}", "")
                 continue
-            if not text.strip():
-                reject(i, "page has no extractable text (scanned image? OCR is not built in)", "")
+            stripped = text.strip()
+            if len(stripped) < 20:       # a scan typically leaves only a page number / footer behind
+                if page.get_images():
+                    reject(i, "scanned page: it is an image with no text layer (OCR is not built in)", stripped[:50])
+                else:
+                    reject(i, "page has almost no text", stripped[:50])
                 continue
             yield Segment(text, f"page {i}", {"page": i})
     finally:

@@ -333,3 +333,21 @@ def test_report_has_retrieval_check_and_files(ctx, tmp_path):
     rep = ctx.ingestion.report(job["id"], with_retrieval_check=True)
     assert rep["data"]["retrieval_check"]["recall_at_5"] == 1.0
     assert "does **not** change the language model" in rep["markdown"]
+
+
+def test_scanned_image_only_pdf_is_explained_not_reported_as_junk(ctx, tmp_path):
+    import pymupdf
+    doc = pymupdf.open()
+    for n in range(1, 6):                                    # 5 "scanned" pages: a picture plus a stray page number
+        pg = doc.new_page()
+        pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 40, 40), False)
+        pix.clear_with(200)
+        pg.insert_image(pymupdf.Rect(50, 50, 500, 700), pixmap=pix)
+        pg.insert_text((300, 800), str(n))
+    p = tmp_path / "scan.pdf"
+    doc.save(str(p))
+    job = run(ctx, "scan", [p])
+    item = ctx.ingestion.list_items(job["id"])[0]
+    assert item["status"] == "rejected" and "scanned images" in item["reason"] and "OCR" in item["reason"] and "5 page(s)" in item["reason"]
+    assert job["counts"]["chunks_indexed"] == 0 and job["status"] != "paused"          # no misleading quality-gate pause
+    assert any(r["reason"].startswith("scanned page") for r in ctx.ingestion.list_rejects(job["id"]))

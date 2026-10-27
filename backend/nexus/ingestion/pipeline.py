@@ -397,11 +397,13 @@ class IngestionManager:
         cursor = int(item["cursor"] or 0)
         profile = Profile()
         buf_rejects: list[tuple[int, str, str]] = []
-        state = {"skipping": cursor > 0}
+        state = {"skipping": cursor > 0, "scanned": 0}
 
         def reject(idx: int, reason: str, sample: str) -> None:
             if not state["skipping"]:
                 buf_rejects.append((idx, reason, sample[:300]))
+                if reason.startswith("scanned page"):
+                    state["scanned"] += 1
 
         if kind in parsers.TABULAR and not cfg.tabular_retrieval:
             for _ in parsers.iter_segments(path, kind, reject, profile):
@@ -457,6 +459,9 @@ class IngestionManager:
             status, reason = "quarantined", "all content was quarantined for review"
         elif total_indexed == 0 and seg_index == 0:
             status, reason = "rejected", "no extractable content"
+            if state["scanned"]:
+                reason = (f"{state['scanned']} page(s) are scanned images with no text layer. OCR is not built in: run OCR on the PDF first "
+                          "(see docs/TROUBLESHOOTING.md > PDFs), then ingest the OCR'd file.")
         elif total_indexed == 0:
             status, reason = "rejected", "all content rejected by quality filters"
         bad = counts.get("chunks_rejected", 0) + counts.get("records_rejected", 0) + counts.get("chunks_quarantined", 0)
